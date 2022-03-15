@@ -1,0 +1,12 @@
+*.swp
+__pycache__/
+build
+*.json
+*.log
+src/examples/scripts/env/*
+src/examples/scripts/__pycache__/*
+*.tum
+*cache
+docs/
+
+*~

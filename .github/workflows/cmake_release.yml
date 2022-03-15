@@ -1,0 +1,78 @@
+name: build_test_release
+
+on: [push]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE_DEBUG: Debug
+  BUILD_TYPE_RELEASE: Release
+
+jobs:
+  build:
+    # The CMake configure and build commands are platform agnostic and should work equally
+    # well on Windows or Mac.  You can convert this to a matrix build if you need
+    # cross-platform coverage.
+    # See: https://docs.github.com/en/actions/configuring-and-managing-workflows/configuring-a-workflow#configuring-a-build-matrix
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install packages
+      run: |
+        sudo apt update
+        sudo apt upgrade
+        sudo apt install libboost-all-dev libgtest-dev libbenchmark-dev
+        sudo apt install libeigen3-dev
+        sudo apt install ninja-build
+        sudo apt install liburdfdom-dev
+        sudo apt install clang-10 clang-format-10 clang-tidy-10
+
+    - name: Create Build Environment
+      # Some projects don't allow in-source building, so create a separate build directory
+      # We'll use this as our working directory for all subsequent commands
+      run: sudo cmake -E make_directory build
+
+    - name: Change ownership
+      run: sudo chown -R $USER build
+
+    - name: Update submodules
+      run: git submodule update --init --recursive
+
+    - name: Configure CMake Release
+      # Use a bash shell so we can use the same syntax for environment variable
+      # access regardless of the host operating system
+      shell: bash
+      working-directory: ./build
+      # Note the current convention is to use the -S and -B options here to specify source
+      # and build directories, but this is only available with CMake 3.13 and higher.
+      # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
+      run: cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-Werror -DCMAKE_BUILD_TYPE=$BUILD_TYPE_RELEASE
+
+    - name: Build Release
+      working-directory: ./build
+      shell: bash
+      # Execute the build.  You can specify a specific target with "--target <NAME>"
+      run: ninja
+
+    - name: Test Release
+      working-directory: ./build
+      shell: bash
+      # Execute tests defined by the CMake configuration.
+      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+      run: ctest -C $BUILD_TYPE_RELEASE --verbose
+
+    - name: Install Python deps
+      working-directory: ./scripts
+      shell: bash
+      run: pip3 install -r requirements.txt
+
+    - name: Pre-commit linting
+      working-directory: .
+      shell: bash
+      run: python3 -m pre_commit install && python3 -m pre_commit run --all-files
+
+    - name: Clang-tidy
+      working-directory: .
+      shell: bash
+      run: run-clang-tidy-10.py -header-filter=rttopp/* -p build/ src/* examples/* tests/*

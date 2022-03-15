@@ -1,0 +1,34 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+exclude: '.\.nb$'
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.4.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-json
+    -   id: check-added-large-files
+# TODO(wolfgang): enable flake8 and pylint
+# -   repo: https://gitlab.com/pycqa/flake8
+#     rev: 4.0.1
+#     hooks:
+#     -   id: flake8
+-   repo: https://github.com/ambv/black
+    rev: 21.5b0
+    hooks:
+    -   id: black
+-   repo: https://github.com/pocc/pre-commit-hooks
+    rev: v1.1.1
+    hooks:
+      - id: clang-format
+        entry: clang-format-10
+        args: [-style=file, -i]
+# clang-tidy is run separately in CI
+#      - id: clang-tidy
+#        args: [-config=, -p=build]
+-   repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.10
+    hooks:
+      - id: cmake-format

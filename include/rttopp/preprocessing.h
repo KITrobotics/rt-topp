@@ -6,7 +6,11 @@
 
 namespace rttopp {
 
-template <size_t N_JOINTS, size_t N_MAX_WAYPOINTS, size_t N_MAX_STEPS>
+// TODO(wolfgang): mirror MAX_WAYPOINTS and MAX_STEPS defaults from rttopp2,
+// maybe create common consts in types_utils for that? (different again if we
+// switch to std::vectors and don't use Boost's static_vector)
+template <size_t N_JOINTS, size_t N_MAX_WAYPOINTS = 30,
+          size_t N_MAX_STEPS = 6000>
 class Preprocessing {
  public:
   explicit Preprocessing(const double path_resolution = 0.05,
@@ -134,6 +138,7 @@ class Preprocessing {
       boost::container::static_vector<NJonitWaypointDataType, N_MAX_WAYPOINTS>;
   using DerivativesDataType = JointPathDerivatives<N_JOINTS>;
 
+  // TODO(wolfgang): why even save the waypoints? They are never read.
   boost::container::static_vector<Waypoint<N_JOINTS>, N_MAX_WAYPOINTS> wps_;
   boost::container::static_vector<Waypoint<N_JOINTS>, N_MAX_STEPS> interpl_;
 
@@ -262,7 +267,7 @@ void Preprocessing<N_JOINTS, N_MAX_WAYPOINTS, N_MAX_STEPS>::computeCoefficients(
     val_d_[0] /= val_b_[0];
   } else {
     val_c_[0] = 0;
-    val_d_[0] = desired_start_vel;
+    val_d_[0] = desired_start_vel.normalized();
   }
   coeff_k_.clear();
   coeff_k_.emplace_back(NJonitWaypointDataType::Zero());
@@ -284,14 +289,14 @@ void Preprocessing<N_JOINTS, N_MAX_WAYPOINTS, N_MAX_STEPS>::computeCoefficients(
         (val_d_[end_idx] - val_a_[end_idx] * val_d_[end_idx - 1]) /
         (val_b_[end_idx] - val_a_[end_idx] * val_c_[end_idx - 1]));
   } else {
-    coeff_k_.emplace_back(desired_end_vel);
+    coeff_k_.emplace_back(desired_end_vel.normalized());
   }
 
   // Do not use size_t or unsigned int in the following!!!
   for (int i = n_coeff_ - 2; i >= 0; --i) {
     coeff_k_[i] = val_d_[i] - val_c_[i] * coeff_k_[i + 1];
   }
-  coeff_k_[0] = start_is_natural ? coeff_k_[0] : desired_start_vel;
+  coeff_k_[0] = start_is_natural ? coeff_k_[0] : desired_start_vel.normalized();
 }
 
 template <size_t N_JOINTS, size_t N_MAX_WAYPOINTS, size_t N_MAX_STEPS>
@@ -421,6 +426,8 @@ void Preprocessing<N_JOINTS, N_MAX_WAYPOINTS, N_MAX_STEPS>::interpolateFinal(
   double curr_segment = s_wps[active_seg];
   double next_segment = s_wps[active_seg + 1];
   double d_s = next_segment - curr_segment;
+  double half_res = res * 0.5;
+  double s_diff = .0;
 
   NJonitWaypointDataType curr_pos = wps[active_seg].joints.position;
   NJonitWaypointDataType next_pos = wps[active_seg + 1].joints.position;
@@ -443,7 +450,7 @@ void Preprocessing<N_JOINTS, N_MAX_WAYPOINTS, N_MAX_STEPS>::interpolateFinal(
   derivatives_.emplace_back(der_start);
 
   while (true) {
-    curr_s += res;
+    curr_s += half_res;
     tau = (curr_s - curr_segment) / d_s;
 
     while (tau > 1) {
@@ -491,22 +498,42 @@ void Preprocessing<N_JOINTS, N_MAX_WAYPOINTS, N_MAX_STEPS>::interpolateFinal(
     NJonitWaypointDataType interpolant_old = interpolant;
     interpolant = curr_pos + tau * (a_i + d_pos) + tau2 * (b_i - 2 * a_i) +
                   (a_i - b_i) * tau3;
-    Waypoint<N_JOINTS> interpl_wp = Waypoint<N_JOINTS>();
-    interpl_wp.joints.position = interpolant;
-    interpl_.emplace_back(interpl_wp);
 
-    adjusted_s += (interpolant - interpolant_old).norm();
-    // s_adjusted.emplace_back(adjusted_s);
-    s_adjusted.emplace_back(adjusted_s);
+    double iterp_diff = (interpolant - interpolant_old).norm();
+    s_diff += iterp_diff;
 
-    // Compute the derivatives
-    DerivativesDataType der;
-    der.first =
-        (a_i + d_pos + 2 * (b_i - 2 * a_i) * tau + 3 * (a_i - b_i) * tau2) /
-        d_s;
-    der.second = (2 * (b_i - 2 * a_i) + 6 * (a_i - b_i) * tau) / d_s / d_s;
-    der.third = 6 * (a_i - b_i) / d_s / d_s / d_s;
-    derivatives_.emplace_back(der);
+    if (s_diff > res) {
+      double correction = (s_diff - res) / d_s / (iterp_diff / half_res);
+      tau = tau - correction;
+      curr_s = tau * d_s + curr_segment;
+
+      tau2 = tau * tau;
+      tau3 = tau2 * tau;
+      interpolant = curr_pos + tau * (a_i + d_pos) + tau2 * (b_i - 2 * a_i) +
+                    (a_i - b_i) * tau3;
+
+      Waypoint<N_JOINTS> interpl_wp = Waypoint<N_JOINTS>();
+      interpl_wp.joints.position = interpolant;
+      interpl_.emplace_back(interpl_wp);
+
+      // Todo: maybe wrong
+      s_diff -= iterp_diff;
+      iterp_diff = (interpolant - interpolant_old).norm();
+      s_diff += iterp_diff;
+      adjusted_s += s_diff;
+      // s_adjusted.emplace_back(adjusted_s);
+      s_adjusted.emplace_back(adjusted_s);
+
+      // Compute the derivatives
+      DerivativesDataType der;
+      der.first =
+          (a_i + d_pos + 2 * (b_i - 2 * a_i) * tau + 3 * (a_i - b_i) * tau2) /
+          d_s;
+      der.second = (2 * (b_i - 2 * a_i) + 6 * (a_i - b_i) * tau) / d_s / d_s;
+      der.third = 6 * (a_i - b_i) / d_s / d_s / d_s;
+      derivatives_.emplace_back(der);
+      s_diff = .0;
+    }
   }  // End While
 
   n_seg_ = interpl_.size();

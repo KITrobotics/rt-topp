@@ -25,10 +25,13 @@ class RTTOPP2 {
   explicit RTTOPP2(const double cycle_time = 0.001,
                    const double path_resolution = 0.05,
                    const size_t steps_per_cycle = 0)
-      : cycle_time_(cycle_time),
+      : preprocess_(path_resolution, steps_per_cycle),
+        cycle_time_(cycle_time),
         path_resolution_(path_resolution),
-        steps_per_cycle_(steps_per_cycle),
-        preprocess_(path_resolution, steps_per_cycle) {}
+        steps_per_cycle_(steps_per_cycle) {}
+
+  // TODO(wolfgang): public methods do no yet check for invalid input (e.g. all
+  // numbers finite, constraints vel_min < 0, vel_max > 0, min < max)
 
   // TODO(wolfgang): does a full parameterization, more methods are needed for a
   // per-cycle parameterization
@@ -40,7 +43,8 @@ class RTTOPP2 {
       double *std_dev = nullptr, double *max_normalized_velocity = nullptr,
       double *max_normalized_acceleration = nullptr) const;
 
-  [[nodiscard]] nlohmann::json toJson() const;
+  [[nodiscard]] nlohmann::json toJson(
+      const Waypoints<N_JOINTS> &waypoints) const;
 
  private:
   using JointPathDerivativeState = JointPathDerivatives<N_JOINTS>;
@@ -56,23 +60,26 @@ class RTTOPP2 {
       size_t current_idx, const PathState &current_state,
       const JointPathDerivativeState &joint_path_derivative_state) const;
 
+  Preprocessing<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS> preprocess_;
+
+  Constraints<N_JOINTS> constraints_;
+
+  // TODO(wolfgang): rework so that second pass is final trajectory and not
+  // saved internally
+  std::array<WaypointJoint<N_JOINTS>, MAX_STEPS> joint_trajectory_;
+
   const double cycle_time_;
   const double path_resolution_;
   const double steps_per_cycle_;
 
-  Constraints<N_JOINTS> constraints_;
-  PathState start_state_, end_state_;
   size_t num_idx_;
+  PathState start_state_, end_state_;
   std::array<PathState, MAX_STEPS> backward_pass_states_;
   // TODO(wolfgang): rework so that second pass is final trajectory and not
   // saved internally
   std::array<PathState, MAX_STEPS> forward_pass_states_;
-  std::array<WaypointJoint<N_JOINTS>, MAX_STEPS> joint_trajectory_;
-
-  Preprocessing<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS> preprocess_;
 
   // minimum velocity that needs to be enforced during integration
-  // TODO(wolfgang): Leandro used 1.0e-02 in his tests, is this too low?
   static constexpr double MIN_VELOCITY = utils::EPS;
 };
 
@@ -113,9 +120,6 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::parameterizeFull(
     result = passLocal(true, false);
   }
 
-  // TODO(wolfgang): check here if start state valid and if target velocity
-  // could be reached
-
   for (size_t idx = 0; idx < num_idx_; ++idx) {
     const auto &path_state =
         forward_first ? backward_pass_states_[idx] : forward_pass_states_[idx];
@@ -152,19 +156,58 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::passLocal(
     const auto joint_path_derivatives = preprocess_.getDerivatives(current_idx);
 
     if (first) {
-      const auto vel_abs_max_first_order =
-          path_velocity_limit.calculateJointVelocityLimit(
-              joint_path_derivatives);
+      // TODO(wolfgang): Since the changes on the wolfgang_clean_mvc2stayaway
+      // and wolfgang_clean_fixMVC branches, the absolute value is taken here.
+      // The acc_min > acc_max check is completely removed and thus,
+      // second-order MVC values are computed in every bw step. This allowed to
+      // use a velocity factor for the MVC2 value, but it significantly
+      // increases the overall computation time. The check could be reintroduced
+      // if it turns out that using it does not cause instabilities. Using the
+      // check alone is problematic because the bw
+      // integration can reach areas above MVC2 where acc_min < acc_max again
+      // and thus this check alone is not sufficient or unstable. The velocity
+      // factor for MVC2 is currently not needed. If it is needed again, it
+      // should be used here and not in the PathVelocityLimit class. The value
+      // in the class should be the exact one and if that value turns out to not
+      // be controllable here in the algorithm, a factor should be applied here.
+      const auto vel_abs_max =
+          path_velocity_limit.calculateOverallLimit(joint_path_derivatives);
 
-      current_state.velocity =
-          std::min(current_state.velocity, vel_abs_max_first_order);
+      current_state.velocity = std::min(current_state.velocity, vel_abs_max);
     } else {
       const auto &previous_pass_state = forward
                                             ? backward_pass_states_[current_idx]
                                             : forward_pass_states_[current_idx];
-      if (current_state.velocity > previous_pass_state.velocity) {
-        current_state.on_previous_limit_curve = true;
-        current_state.velocity = previous_pass_state.velocity;
+      current_state.velocity =
+          std::min(current_state.velocity, previous_pass_state.velocity);
+    }
+
+    // these two checks below ensure that start and goal state are below the MVC
+    // at the end of passLocal(), it is checked if the states are actually
+    // reached
+    if (current_idx == int(num_idx_ - 1) &&
+        current_state.velocity < end_state_.velocity) {
+      return Result::GOAL_STATE_VELOCITY_TOO_HIGH;
+    }
+
+    if (current_idx == 0 && current_state.velocity < start_state_.velocity) {
+      return Result::START_STATE_VELOCITY_TOO_HIGH;
+    }
+
+    if (current_idx < int(num_idx_ - 1) && current_idx > 0) {
+      const auto &previous_state = forward
+                                       ? forward_pass_states_[current_idx - 1]
+                                       : backward_pass_states_[current_idx + 1];
+      // TODO(wolfgang): stalling with time integration theoretically possible,
+      // need to check there if min velocity cannot be increased over multiple
+      // sampling steps when velocity stalls at the minimum value over two
+      // positions, the problem is not solvable
+      if (current_state.velocity <= MIN_VELOCITY &&
+          previous_state.velocity <= MIN_VELOCITY) {
+        /* std::cout << "velocity stalling at idx " << current_idx << " in run "
+         */
+        /* << (forward ? "forward" : "backward") << std::endl; */
+        return Result::NOT_SOLVABLE_VELOCITY_STALLING;
       }
     }
 
@@ -172,64 +215,11 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::passLocal(
     std::tie(acc_min, acc_max) =
         path_acceleration_limits.calculateDynamicLimits(current_state,
                                                         joint_path_derivatives);
-
-    // TODO(wolfgang): this breaks the possibility to have the forward
-    // integration as first run, but we can probably discard all the options
-    // that enable the first run as forward integration. We will very likely not
-    // need this option.
-    const auto previous_state_on_mvc_second =
-        (first && current_idx < int(num_idx_ - 1))
-            ? backward_pass_states_[current_idx + 1].on_mvc_second
-            : false;
-
-    // either acceleration limits are invalid or they are at their max values
-    // due to all first derivatives being zero in the first run
-    // The previous state also needs to be checked that it's on the second-order
-    // MVC. The reason is that there can be rare cases where the integration
-    // accelerates from a point on the second-order MVC and immediately hits the
-    // first-order MVC. It seems that in this case acc_min < acc_max. This means
-    // that it's possible to get into a velocity area on the first-order MVC
-    // where the acceleration ranges are valid, but it is actually above the
-    // second-order MVC and above the area where the acceleration ranges are
-    // invalid.
-    // TODO(wolfgang): necessary to have this additional check in case that all
-    // first derivatives are zero? Then min operator also needed for velocity
-    // TODO(wolfgang): an alternative to all of these singularity avoidance
-    // approaches below would be to limit the velocity to e.g. 90% of the
-    // velocity on the second-order MVC (if it would be on there otherwise
-    // during bw param). Then the acc_min > acc_max check cannot be used and we
-    // would need to check the overall velocity limit in every bw param step in
-    // the code above.
-    if (acc_min > acc_max ||
-        (first && acc_max <= utils::EPS && acc_min >= -utils::EPS) ||
-        previous_state_on_mvc_second) {
-      if (!first) {
-        std::cout << "ERROR: should not happen, second pass and accelerations "
-                     "invalid at idx "
-                  << current_idx << std::endl;
-        return Result::GENERAL_ERROR;
-      }
-
-      const auto vel_abs_max_second_order =
-          path_velocity_limit.calculateJointAccelerationLimit(
-              joint_path_derivatives);
-      current_state.on_mvc_second =
-          current_state.velocity > vel_abs_max_second_order ? true : false;
-      current_state.velocity =
-          std::min(current_state.velocity, vel_abs_max_second_order);
-
-      std::tie(acc_min, acc_max) =
-          path_acceleration_limits.calculateDynamicLimits(
-              current_state, joint_path_derivatives);
-    }
     assert(acc_min < acc_max);
 
     if ((forward && current_idx < int(num_idx_ - 1)) ||
         (!forward && current_idx > 0)) {
-      current_state.acceleration = forward ? acc_max : acc_min;
-      const auto &previous_state = forward
-                                       ? forward_pass_states_[current_idx - 1]
-                                       : backward_pass_states_[current_idx + 1];
+      current_state.acceleration = forward ? acc_max : acc_min + utils::EPS;
 
       // A problem here with the bw pass is that the accel_min at the current
       // state is used for determining the velocity at the previous state.
@@ -246,39 +236,30 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::passLocal(
       // Instead, the solution below is used where the bw accel is limited to
       // the max of acc_min at current pos and the next one
       if (!forward) {
-        const auto next_state =
-            integrateLocalBackward(current_idx, current_state);
+        auto next_state = integrateLocalBackward(current_idx, current_state);
+        const auto next_derivatives =
+            preprocess_.getDerivatives(current_idx - 1);
+        // ensure that the next state is valid and below or on the MVC
+        const auto vel_abs_max =
+            path_velocity_limit.calculateOverallLimit(next_derivatives);
+        next_state.velocity = std::min(next_state.velocity, vel_abs_max);
+
         double acc_min_next, acc_max_next;
         std::tie(acc_min_next, acc_max_next) =
-            path_acceleration_limits.calculateDynamicLimits(
-                next_state, preprocess_.getDerivatives(current_idx - 1));
-        if (acc_min_next < acc_max_next) {
-          current_state.acceleration = std::max(acc_min, acc_min_next);
-        } else {
-          // The next state is above the second-order MVC, get away from the
-          // singular points by choosing the maximum acceleration. This ensures
-          // that the second pass has no instances where the velocity has to try
-          // to move along the second-order MVC (which is generally not
-          // possible).
-          current_state.acceleration = std::max(acc_max, acc_max_next);
-        }
-        // This ensures that the second pass does not accelerate into a singular
-        // point on the second-order MVC and instead brakes one step more to
-        // stay away from the singularity. Both this and the additional braking
-        // above should ensure that we do not get invalid accelerations in the
-        // second pass around singularities.
-      } else if (!first && (current_state.on_previous_limit_curve ||
-                            previous_state.on_previous_limit_curve)) {
-        const auto &next_state = forward
-                                     ? backward_pass_states_[current_idx + 1]
-                                     : forward_pass_states_[current_idx - 1];
-        const auto &next_after_next_state =
-            forward ? backward_pass_states_[current_idx + 2]
-                    : forward_pass_states_[current_idx - 2];
-        if (next_state.on_mvc_second || next_after_next_state.on_mvc_second) {
-          current_state.acceleration = acc_min;
-        }
+            path_acceleration_limits.calculateDynamicLimits(next_state,
+                                                            next_derivatives);
+        assert(acc_min_next < acc_max_next);
+        // add a little eps for the bw accel to avoid little numerical
+        // discrepancies between fw and bw param
+        current_state.acceleration =
+            std::max(acc_min, acc_min_next) + utils::EPS;
       }
+      // TODO(wolfgang): several steps for the forward integration were removed
+      // here on the wolfgang_clean_mvc2stayaway branch. They allowed to brake a
+      // few steps further to avoid MVC2 singularities. They were generally
+      // useful and could be reintroduced in the time integration variant
+      // (instead of e.g. reducing the velocity factor for the MVC2 value which
+      // has a much larger negative impact on the optimality.)
     } else {
       // set final state acceleration to zero to avoid confusion (if it's within
       // limits), otherwise to the value closest to zero
@@ -297,9 +278,9 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::passLocal(
 
     if (forward) {
       if (current_idx > 0) {
-        auto &previous_state = forward_pass_states_[current_idx - 1];
-        previous_state.acceleration =
-            calculatePathAcceleration(current_state, previous_state);
+        auto &previous_fw_state = forward_pass_states_[current_idx - 1];
+        previous_fw_state.acceleration =
+            calculatePathAcceleration(current_state, previous_fw_state);
       }
 
       if (current_idx < int(num_idx_ - 1)) {
@@ -310,9 +291,9 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::passLocal(
       if (current_idx < int(num_idx_ - 1)) {
         // TODO(wolfgang): computes actual acceleration, only needed for
         // debugging/plotting in bw pass, can be moved
-        auto &previous_state = backward_pass_states_[current_idx + 1];
-        previous_state.acceleration =
-            calculatePathAcceleration(current_state, previous_state);
+        auto &previous_bw_state = backward_pass_states_[current_idx + 1];
+        previous_bw_state.acceleration =
+            calculatePathAcceleration(current_state, previous_bw_state);
       }
 
       if (current_idx > 0) {
@@ -320,6 +301,21 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::passLocal(
       }
       current_idx--;
     }
+  }
+
+  if (!forward &&
+      start_state_.velocity > backward_pass_states_.front().velocity) {
+    /* std::cout << "start_state " << start_state_.velocity << ", " << */
+    /* backward_pass_states_.front().velocity << std::endl; */
+    return Result::START_STATE_VELOCITY_TOO_HIGH;
+  }
+
+  // TODO(wolfgang): need to check this for time integration, too
+  if (forward &&
+      end_state_.velocity > forward_pass_states_[num_idx_ - 1].velocity) {
+    /* std::cout << "end_state " << end_state_.velocity << ", " <<
+     * forward_pass_states_[num_idx_ - 1].velocity << std::endl; */
+    return Result::GOAL_STATE_VELOCITY_TOO_HIGH;
   }
 
   return Result::SUCCESS;
@@ -334,6 +330,7 @@ PathState RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::integrateLocalForward(
   next_state.position = preprocess_.getPathPosition(current_idx + 1);
   const auto delta_position =
       next_state.position - preprocess_.getPathPosition(current_idx);
+  assert(!utils::isZero(delta_position));
   const auto next_velocity =
       std::sqrt(utils::pow(current_state.velocity, 2) +
                 2.0 * delta_position * current_state.acceleration);
@@ -349,6 +346,7 @@ PathState RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::integrateLocalBackward(
   next_state.position = preprocess_.getPathPosition(current_idx - 1);
   const auto delta_position =
       preprocess_.getPathPosition(current_idx) - next_state.position;
+  assert(!utils::isZero(delta_position));
   const auto next_velocity =
       std::sqrt(utils::pow(current_state.velocity, 2) -
                 2.0 * delta_position * current_state.acceleration);
@@ -398,6 +396,7 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
     const bool verbose, size_t *num_idx, double *mean, double *std_dev,
     double *max_normalized_velocity,
     double *max_normalized_acceleration) const {
+  const double ACCELERATION_TOLERANCE = utils::EPS * 10;
   PathVelocityLimit<N_JOINTS> path_velocity_limit(constraints_.joints);
 
   for (size_t idx = 0; idx < num_idx_; ++idx) {
@@ -418,11 +417,13 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
                 << idx << std::endl;
       return Result::GENERAL_ERROR;
     }
-    if (fw_path_state.acceleration > fw_path_state.acc_max + utils::EPS ||
-        fw_path_state.acceleration < fw_path_state.acc_min - utils::EPS) {
+    if (fw_path_state.acceleration >
+            fw_path_state.acc_max + ACCELERATION_TOLERANCE ||
+        fw_path_state.acceleration <
+            fw_path_state.acc_min - ACCELERATION_TOLERANCE) {
       std::cout << "Error: fw path acceleration not within limits at idx "
                 << idx << std::endl;
-      std::cout << "limits: " << fw_path_state.acc_min << ", "
+      std::cout << "limits: " << fw_path_state.acc_max << ", "
                 << fw_path_state.acc_min << "; path acceleration "
                 << fw_path_state.acceleration << std::endl;
       return Result::GENERAL_ERROR;
@@ -438,9 +439,11 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
         return Result::GENERAL_ERROR;
       }
       if (joint_state.acceleration[joint] >
-              constraints_.joints.acceleration_max[joint] ||
+              constraints_.joints.acceleration_max[joint] +
+                  ACCELERATION_TOLERANCE ||
           joint_state.acceleration[joint] <
-              constraints_.joints.acceleration_min[joint]) {
+              constraints_.joints.acceleration_min[joint] -
+                  ACCELERATION_TOLERANCE) {
         std::cout << "Error: joint acceleration not within limits at idx "
                   << idx << " and joint " << joint << std::endl;
         return Result::GENERAL_ERROR;
@@ -521,9 +524,20 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
 }
 
 template <size_t N_JOINTS, size_t MAX_WAYPOINTS, size_t MAX_STEPS>
-nlohmann::json RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::toJson() const {
+nlohmann::json RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::toJson(
+    const Waypoints<N_JOINTS> &waypoints) const {
   nlohmann::json j;
   PathVelocityLimit<N_JOINTS> path_velocity_limit(constraints_.joints);
+
+  for (size_t idx = 0; idx < waypoints.size(); ++idx) {
+    const auto &waypoint = waypoints[idx];
+    j["waypoints"][idx]["idx"] = idx;
+    std::vector<double> joint_positions, joint_velocities;
+    utils::setMatrixAsVector(joint_positions, waypoint.joints.position);
+    utils::setMatrixAsVector(joint_velocities, waypoint.joints.velocity);
+    j["waypoints"][idx]["joints"]["position"] = joint_positions;
+    j["waypoints"][idx]["joints"]["velocity"] = joint_velocities;
+  }
 
   for (size_t idx = 0; idx < num_idx_; ++idx) {
     j["path_parameterization"][idx]["idx"] = idx;

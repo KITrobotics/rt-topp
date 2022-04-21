@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include <Eigen/Core>
@@ -15,10 +16,13 @@ class Result {
 
     // errors
     ERRORS_BEGIN = 64,
-    GENERAL_ERROR = ERRORS_BEGIN,
     // TODO(wolfgang): set here all (specific) errors that can occur and add
     // warnings if useful
+    START_STATE_VELOCITY_TOO_HIGH = ERRORS_BEGIN,
+    GOAL_STATE_VELOCITY_TOO_HIGH,
+    NOT_SOLVABLE_VELOCITY_STALLING,
     INVALID_INPUT,
+    GENERAL_ERROR,
 
     NOT_SET = 255
   };
@@ -36,7 +40,27 @@ class Result {
 
   [[nodiscard]] bool set() const { return value_ != NOT_SET; }
 
-  [[nodiscard]] const char *message() const;
+  [[nodiscard]] const char *message() const {
+    switch (value_) {
+      case SUCCESS:
+        return "SUCCESS";
+      case START_STATE_VELOCITY_TOO_HIGH:
+        return "START_STATE_VELOCITY_TOO_HIGH";
+      case GOAL_STATE_VELOCITY_TOO_HIGH:
+        return "GOAL_STATE_VELOCITY_TOO_HIGH";
+      case NOT_SOLVABLE_VELOCITY_STALLING:
+        return "NOT_SOLVABLE_VELOCITY_STALLING";
+      case INVALID_INPUT:
+        return "INVALID_INPUT";
+      case GENERAL_ERROR:
+        return "GENERAL_ERROR";
+      case NOT_SET:
+        return "NOT_SET";
+
+      default:
+        return "UNKNOWN STATUS CODE";
+    }
+  }
 
  private:
   Msg value_{NOT_SET};
@@ -127,10 +151,6 @@ struct PathState {
 
   // dynamic max and min acceleration
   double acc_max, acc_min = 0.0;
-  // velocity is on the second-order MVC
-  bool on_mvc_second = false;
-  // velocity is on the limit curve given by the first pass
-  bool on_previous_limit_curve = false;
 };
 
 template <std::size_t N_JOINTS>
@@ -145,10 +165,9 @@ struct JointPathDerivatives {
 
 namespace utils {
 
-// TODO(wolfgang): kinematics uses -07, is this value ok here?
-constexpr double EPS = 1.0e-06;
+constexpr double EPS = 1.0e-07;
 
-[[nodiscard]] constexpr bool isZero(double v) { return std::abs(v) < EPS; }
+[[nodiscard]] constexpr bool isZero(double v) { return std::abs(v) <= EPS; }
 
 /**
  * @brief Just a constexpr replacement for std::pow when y is int for

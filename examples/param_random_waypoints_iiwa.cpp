@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
   rttopp::Result result = topp.parameterizeFull(constraints, waypoints);
   const auto t2 = std::chrono::high_resolution_clock::now();
   if (result.error()) {
+    std::cout << "error in topp run: " << result.message() << std::endl;
     return EXIT_FAILURE;
   }
 
@@ -39,7 +40,7 @@ int main(int argc, char** argv) {
       << " microseconds" << std::endl;
 
   if (argc > 1 && std::string(argv[1]) == "json") {
-    nlohmann::json j = topp.toJson();
+    nlohmann::json j = topp.toJson(waypoints);
 
     const std::string dir_base = "./../data/";
     const std::string dir = dir_base + "random_waypoints_iiwa";

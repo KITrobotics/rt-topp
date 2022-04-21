@@ -167,13 +167,6 @@ PathAccelerationLimits<N_JOINTS>::calculateDynamicLimits(
     }
   }
 
-  // TODO(wolfgang): remove this print and workaround and only keep the assert
-  if (min_acceleration <= std::numeric_limits<double>::lowest() ||
-      max_acceleration >= std::numeric_limits<double>::max()) {
-    min_acceleration = -utils::EPS * 2;
-    max_acceleration = utils::EPS * 2;
-  }
-
   // at least one first derivative should not be zero
   assert(min_acceleration > std::numeric_limits<double>::lowest() &&
          max_acceleration < std::numeric_limits<double>::max());

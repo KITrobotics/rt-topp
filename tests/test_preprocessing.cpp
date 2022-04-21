@@ -16,7 +16,7 @@ TEST(RandomPreprocessing, randomWpsPreprocessing) {
 
   const size_t n_waypoints = 10;
   const size_t max_waypoint = 50;
-  const size_t max_segments = 1500;
+  const size_t max_segments = 3000;
   rttopp::Waypoints<n_joints> wps =
       rttopp::demo_trajectories::generateRandomJointWaypoints(n_waypoints,
                                                               jnt_limits);
@@ -36,7 +36,7 @@ TEST(FxiedPreprocessing, fixedWpsPreprocessing) {
   const size_t n_joints = 2;
   const size_t n_waypoints = 10;
   const size_t max_waypoint = 50;
-  const size_t max_segments = 1500;
+  const size_t max_segments = 3000;
   Eigen::Matrix<double, 10, 2> wps_eigen;
   rttopp::Waypoints<n_joints> wps;
   rttopp::Waypoint<n_joints> p0, p1, p2, p3, p4, p5, p6, p7, p8, p9;

@@ -6,7 +6,16 @@
 #include <rttopp/rttopp2.h>
 
 // TODO(wolfgang): increase this significantly
-constexpr auto N_TRAJECTORIES = 1000;
+// constexpr auto N_TRAJECTORIES = 1000 * 1000;
+// Path 22133 has path positions too close to each other (when using start/goal
+// velocity 1.0 in every axis). When testing with zero start/goal velocity, this
+// error already happens in the first 9000 paths. When using start/goal
+// velocity 1.0 and checking start/goal state for validity, already run 67 has
+// invaid start velocity. when testing with 0.4 start/goal velocity, path 9616
+// has a too high start velocity.
+// TODO(wolfgang): This would be an interesting test case to investigate why the
+// start velocity cannot be reached.
+constexpr auto N_TRAJECTORIES = 9 * 1000;
 constexpr auto N_WAYPOINTS = 5;
 
 int main(int argc, char** argv) {
@@ -22,7 +31,7 @@ int main(int argc, char** argv) {
   constraints.joints =
       rttopp::demo_trajectories::generateGenericJointConstraints<n_joints>();
 
-  for (std::size_t i = 0; i < N_TRAJECTORIES; ++i) {
+  for (size_t i = 0; i < N_TRAJECTORIES; ++i) {
     auto waypoints =
         rttopp::demo_trajectories::generateRandomJointWaypoints<n_joints>(
             N_WAYPOINTS,
@@ -30,15 +39,16 @@ int main(int argc, char** argv) {
 
     // set a small velocity at start and end
     waypoints.front().joints.velocity =
-        1.0 * rttopp::WaypointJointDataType<n_joints>::Ones();
+        0.4 * rttopp::WaypointJointDataType<n_joints>::Ones();
     waypoints.back().joints.velocity =
-        1.0 * rttopp::WaypointJointDataType<n_joints>::Ones();
+        0.4 * rttopp::WaypointJointDataType<n_joints>::Ones();
 
     const auto t1 = std::chrono::high_resolution_clock::now();
     rttopp::Result result = topp.parameterizeFull(constraints, waypoints);
     const auto t2 = std::chrono::high_resolution_clock::now();
     if (result.error()) {
-      return EXIT_FAILURE;
+      std::cout << "error in topp run " << i << ": " << result.message()
+                << std::endl;
     }
 
     durations[i] =
@@ -54,7 +64,7 @@ int main(int argc, char** argv) {
     nums_gridpoints[i] = num_gridpoints;
 
     if ((argc > 1 && std::string(argv[1]) == "json") || result.error()) {
-      nlohmann::json j = topp.toJson();
+      nlohmann::json j = topp.toJson(waypoints);
 
       const std::string dir_base = "./../data/";
       const std::string dir = dir_base + "random_waypoints_generic";

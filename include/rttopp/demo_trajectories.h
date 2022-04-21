@@ -21,7 +21,7 @@ JointConstraints<N_JOINTS> generateGenericJointConstraints() {
   joint_constraints.acceleration_max =
       10.0 * WaypointJointDataType<N_JOINTS>::Ones();
   joint_constraints.acceleration_min = -joint_constraints.acceleration_max;
-  joint_constraints.jerk_max = 200.0 * WaypointJointDataType<N_JOINTS>::Ones();
+  joint_constraints.jerk_max = 100.0 * WaypointJointDataType<N_JOINTS>::Ones();
   joint_constraints.jerk_min = -joint_constraints.jerk_max;
 
   joint_constraints.torque_max =

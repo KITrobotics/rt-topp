@@ -7,6 +7,7 @@ src/examples/scripts/env/*
 src/examples/scripts/__pycache__/*
 *.tum
 *cache
+data/
 docs/
 
 *~

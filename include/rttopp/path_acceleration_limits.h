@@ -14,50 +14,6 @@ class PathAccelerationLimits {
       : joint_constraints_(joint_constraints) {}
 
   /**
-   * @brief Calculates overall path acceleration limits when
-   * considering joint velocity, acceleration and jerk constraints.
-   * Internally calls calculateJointVelocityLimits,
-   * calculateJointAccelerationLimits and calculateJointJerkLimits
-   *
-   * @param path_state
-   * @param joint_path_derivative_state
-   *
-   * @return Minimum and maximum overall acceleration limits
-   * respectively
-   */
-  [[nodiscard]] std::pair<double, double> calculateOverallLimits(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-
-  /**
-   * @brief Calculates path acceleration limits based only on joint acceleration
-   * constraints
-   *
-   * @param path_state
-   * @param joint_path_derivative_state
-   *
-   * @return Minimum and maximum path acceleration limits respectively when
-   * considering only joint acceleration constraints
-   */
-  [[nodiscard]] std::pair<double, double> calculateJointAccelerationLimits(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-
-  /**
-   * @brief Calculates path acceleration limits based only on joint jerk
-   * constraints
-   *
-   * @param path_state
-   * @param joint_path_derivative_state
-   *
-   * @return Minimum and maximum path acceleration limits respectively when
-   * considering only joint jerk constraints
-   */
-  [[nodiscard]] std::pair<double, double> calculateJointJerkLimits(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-
-  /**
    * @brief Calculates the min and max acceleration profiles according to the
    * classic TOPP formulation depending on the current path state (see for
    * example Pham et al 2014 - A General, Fast, and Robust Implementation of the
@@ -77,44 +33,6 @@ class PathAccelerationLimits {
       const JointPathDerivativeState &joint_path_derivative_state);
 
  private:
-  /**
-   * @brief Calculates path acceleration limits based only on joint acceleration
-   * constraints. This method handles the case for which both qs and qss are not
-   * equal to zero
-   *
-   * @param path_state
-   * @param joint_path_derivative_state
-   *
-   * @return Minimum and maximum path acceleration limits respectively
-   */
-  [[nodiscard]] std::pair<double, double> calculateJointAccelerationLimits1(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-
-  /**
-   * @brief Calculates path acceleration limits based only on joint acceleration
-   * constraints. This method handles the case for which both qss is equal to
-   * zero
-   *
-   * @param path_state
-   * @param joint_path_derivative_state
-   *
-   * @return Minimum and maximum path acceleration limits respectively
-   */
-  [[nodiscard]] std::pair<double, double> calculateJointAccelerationLimits2(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-
-  [[nodiscard]] std::pair<double, double> calculateJointJerkLimits1(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-  [[nodiscard]] std::pair<double, double> calculateJointJerkLimits2(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-  [[nodiscard]] std::pair<double, double> calculateJointJerkLimits3(
-      const PathState &path_state,
-      const JointPathDerivativeState &joint_path_derivative_state);
-
   const JointConstraints<N_JOINTS> &joint_constraints_;
 };
 

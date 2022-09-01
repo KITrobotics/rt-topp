@@ -51,6 +51,9 @@ TEST(FxiedPreprocessing, fixedWpsPreprocessing) {
   p8.joints.position << 0.478379061338716, 0.407206419829827;
   p9.joints.position << 0.347785022845722, 0.652353338778751;
 
+  p0.joints.velocity << 1.5, 1.5;
+  p1.joints.velocity << 1.5, 1.5;
+
   wps.push_back(p0);
   wps.push_back(p1);
   wps.push_back(p2);
@@ -120,6 +123,114 @@ TEST(FxiedPreprocessing, fixedWpsPreprocessing) {
            << s_position << std::endl;
   }
   myfile.close();
+}
+
+TEST(RandomPreprocessing, allTauInRange) {
+  const size_t n_joints = rttopp::demo_trajectories::NUM_IIWA_JOINTS;
+  std::array<double, n_joints> jnt_limits;
+  for (auto& jnt : jnt_limits) {
+    jnt = M_PI;
+  }
+
+  // const double THRESHOLD = 1e-3;
+  const size_t n_waypoints = 10;
+  const size_t max_waypoint = 50;
+  const size_t max_segments = 3000;
+  rttopp::Waypoints<n_joints> wps =
+      rttopp::demo_trajectories::generateRandomJointWaypoints(n_waypoints,
+                                                              jnt_limits);
+
+  // Construct the instance of the preprocessing
+  auto preprocessing =
+      rttopp::Preprocessing<n_joints, max_waypoint, max_segments>();
+  size_t n_seg = preprocessing.processWaypoints(wps);
+  std::cout << "n_seg: " << n_seg << std::endl;
+
+  ASSERT_GE(n_seg, 1) << "The number of segments should be greater than 1!"
+                      << std::endl;
+
+  for (size_t i = 0; i < n_seg - 1; ++i) {
+    auto tau = preprocessing.getTauFromPath(i);
+
+    ASSERT_LE(tau, 1.0) << "Tau value should be in range [0, 1), current tau: "
+                        << tau << "- Index" << i << std::endl;
+
+    auto next_tau = preprocessing.getTauFromPath(i + 1);
+    bool invalid_decreased =
+        rttopp::utils::isZero(next_tau) != (tau > next_tau);  // xor
+    ASSERT_FALSE(invalid_decreased)
+        << "Invalid descreasing of tau at index " << i << ", tau is " << tau
+        << ", next tau is " << next_tau << std::endl;
+  }
+}
+
+TEST(RandomPreprocessing, BackwardForwardInterpolationVerifying) {
+  const size_t n_joints = rttopp::demo_trajectories::NUM_IIWA_JOINTS;
+  std::array<double, n_joints> jnt_limits;
+  for (auto& jnt : jnt_limits) {
+    jnt = M_PI;
+  }
+
+  const size_t n_waypoints = 10;
+  const size_t max_waypoint = 50;
+  const size_t max_segments = 3000;
+
+  constexpr auto N_TRAJECTORIES = 100 * 1000;
+  for (size_t cnt = 0; cnt < N_TRAJECTORIES; ++cnt) {
+    rttopp::Waypoints<n_joints> wps =
+        rttopp::demo_trajectories::generateRandomJointWaypoints(n_waypoints,
+                                                                jnt_limits);
+
+    // Construct the instance of the preprocessing
+    auto preprocessing =
+        rttopp::Preprocessing<n_joints, max_waypoint, max_segments>();
+    size_t n_seg = preprocessing.processWaypoints(wps);
+
+    for (size_t i = 1; i < n_seg - 1; ++i) {
+      auto derivatives_bw = preprocessing.getDerivatives(i);
+      auto s_bw = preprocessing.getPathPosition(i);
+      auto interpolated_joints_bw = preprocessing.getJointPositionFromPath(i);
+
+      // Step 1:
+      // Check if the position and derivatives are same in different functions
+      auto joints_and_derivatives_fw =
+          preprocessing.computeJointPositionAndDerivatives(s_bw);
+      auto interpolated_joints_fw = joints_and_derivatives_fw.first;
+      auto derivatives_fw = joints_and_derivatives_fw.second;
+
+      EXPECT_TRUE(rttopp::utils::isZero(
+          (derivatives_fw.first - derivatives_bw.first).norm()))
+          << "Derivatives at the segment should be the same! \n"
+          << "Diff:" << (derivatives_fw.first - derivatives_bw.first).norm()
+          << "- Index" << i << std::endl;
+      ASSERT_TRUE(rttopp::utils::isZero(
+          (derivatives_fw.first - derivatives_bw.first).norm()));
+
+      EXPECT_TRUE(rttopp::utils::isZero(
+          (derivatives_fw.second - derivatives_bw.second).norm()))
+          << "Derivatives at the segment should be the same! \n"
+          << "Diff:" << (derivatives_fw.second - derivatives_bw.second).norm()
+          << "- Index" << i << std::endl;
+      ASSERT_TRUE(rttopp::utils::isZero(
+          (derivatives_fw.second - derivatives_bw.second).norm()));
+
+      EXPECT_TRUE(rttopp::utils::isZero(
+          (derivatives_fw.third - derivatives_bw.third).norm()))
+          << "Derivatives at the segment should be the same! \n"
+          << "Diff:" << (derivatives_fw.third - derivatives_bw.third).norm()
+          << "- Index" << i << std::endl;
+      ASSERT_TRUE(rttopp::utils::isZero(
+          (derivatives_fw.third - derivatives_bw.third).norm()));
+
+      EXPECT_TRUE(rttopp::utils::isZero(
+          (interpolated_joints_fw - interpolated_joints_bw).norm()))
+          << "Position at the segment should be the same! \n"
+          << "Diff:" << (interpolated_joints_fw - interpolated_joints_bw).norm()
+          << "- Index" << i << std::endl;
+      ASSERT_TRUE(rttopp::utils::isZero(
+          (interpolated_joints_fw - interpolated_joints_bw).norm()));
+    }
+  }
 }
 
 int main(int argc, char** argv) {

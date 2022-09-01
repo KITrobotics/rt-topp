@@ -13,6 +13,8 @@ class Result {
  public:
   enum Msg : uint8_t {
     SUCCESS = 0,
+    WORKING,   // sample() and keepParam(), goal state not yet reached
+    FINISHED,  // sample() and keepParam(), goal state reached
 
     // errors
     ERRORS_BEGIN = 64,
@@ -37,6 +39,8 @@ class Result {
     // yellow means green, like with traffic lights :)
     return value_ < ERRORS_BEGIN;
   }
+
+  [[nodiscard]] Msg val() const { return value_; }
 
   [[nodiscard]] bool set() const { return value_ != NOT_SET; }
 
@@ -139,10 +143,6 @@ struct Waypoint {
 template <size_t N_JOINTS>
 using Waypoints = std::vector<Waypoint<N_JOINTS>>;
 
-// TODO(wolfgang): the data types below are (likely) only for internal use, so
-// consider moving them to their respective classes and don't expose them here
-// to the global project scope
-
 struct PathState {
   double position;
   double velocity = 0.0;
@@ -162,6 +162,22 @@ struct JointPathDerivatives {
   Eigen::Matrix<double, N_JOINTS, 1> third =
       Eigen::Matrix<double, N_JOINTS, 1>::Zero();
 };
+
+template <size_t N_JOINTS>
+struct State {
+  Waypoint<N_JOINTS> waypoint;
+  double time;
+
+  PathState path_state;
+  JointPathDerivatives<N_JOINTS> derivatives;
+  size_t
+      bw_idx;  // idx from bw pass, position directly before path_state position
+};
+
+// full trajectory when sampling whole path at once
+// not real-time
+template <size_t N_JOINTS>
+using Trajectory = std::vector<State<N_JOINTS>>;
 
 namespace utils {
 

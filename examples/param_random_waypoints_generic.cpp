@@ -5,16 +5,9 @@
 #include <rttopp/demo_trajectories.h>
 #include <rttopp/rttopp2.h>
 
-// TODO(wolfgang): increase this significantly
-// constexpr auto N_TRAJECTORIES = 1000 * 1000;
-// Path 22133 has path positions too close to each other (when using start/goal
-// velocity 1.0 in every axis). When testing with zero start/goal velocity, this
-// error already happens in the first 9000 paths. When using start/goal
-// velocity 1.0 and checking start/goal state for validity, already run 67 has
-// invaid start velocity. when testing with 0.4 start/goal velocity, path 9616
-// has a too high start velocity.
-// TODO(wolfgang): This would be an interesting test case to investigate why the
-// start velocity cannot be reached.
+// When using start/goal velocity 1.0 and checking start/goal state for
+// validity, already run 67 has invaid start velocity. when testing with 0.4
+// start/goal velocity, path 9616 has a too high start velocity.
 constexpr auto N_TRAJECTORIES = 9 * 1000;
 constexpr auto N_WAYPOINTS = 5;
 
@@ -27,7 +20,6 @@ int main(int argc, char** argv) {
       max_normalized_accelerations(N_TRAJECTORIES);
 
   rttopp::Constraints<n_joints> constraints;
-
   constraints.joints =
       rttopp::demo_trajectories::generateGenericJointConstraints<n_joints>();
 
@@ -53,6 +45,7 @@ int main(int argc, char** argv) {
 
     durations[i] =
         std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    // if(i % 10 == 0)
     // std::cout << "topp run " << i << " successfull" << std::endl;
     // std::cout << "computation time " << durations[i]
     //           << " microseconds" << std::endl;
@@ -75,6 +68,7 @@ int main(int argc, char** argv) {
       std::ofstream of(output_path);
 
       if (!of.is_open()) {
+        std::cout << "error in trajectory " << i << std::endl;
         std::cout << "Could not write to file: " << output_path << std::endl;
         return EXIT_FAILURE;
       }

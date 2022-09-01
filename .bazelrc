@@ -1,0 +1,2 @@
+build --distdir=./bazel_build
+build --cxxopt=-std=c++17

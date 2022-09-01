@@ -1,0 +1,127 @@
+# LICENSE
+# Bazel Build for KIT Real-Time Time-Optimal Path Parameterization (RTTOPP)
+
+
+package(default_visibility = ["//visibility:public"])
+
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_library
+cc_library(
+    name = "rttopp",
+    srcs = glob([
+        "src/demo_trajectories.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    hdrs = ["include/rttopp/rttopp2.h"], # Public interface of the library
+    deps = ["@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen"
+    ],
+    copts = []
+)
+
+cc_library(
+    name = "param_random_waypoints_example_generic",
+    srcs = glob([
+        "examples/param_random_waypoints_generic.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    hdrs = ["include/rttopp/rttopp2.h"], # Public interface of the library
+    deps = ["@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen"
+    ],
+    copts = []
+)
+
+cc_library(
+    name = "param_random_waypoints_iiwa",
+    srcs = glob([
+        "examples/param_random_waypoints_iiwa.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    hdrs = ["include/rttopp/rttopp2.h"], # Public interface of the library
+    deps = ["@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen"
+    ],
+    copts = []
+)
+
+cc_library(
+    name = "param_random_waypoints_generic_sampling_example",
+    srcs = glob([
+        "examples/param_random_waypoints_generic_sampling_example.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    hdrs = ["include/rttopp/rttopp2.h"], # Public interface of the library
+    deps = ["@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen"
+    ],
+    copts = []
+)
+
+cc_library(
+    name = "param_failed_random_waypoints_example_generic",
+    srcs = glob([
+        "examples/param_failed_random_waypoints_example_generic.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    hdrs = ["include/rttopp/rttopp2.h"], # Public interface of the library
+    deps = ["@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen"
+    ],
+    copts = []
+)
+
+
+cc_test(
+    name = "path_velocity_limit_tests",
+    srcs = glob([
+        "tests/path_velocity_limit.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    deps = [":rttopp",
+            "@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main"
+    ],
+    copts = []
+)
+
+
+cc_test(
+    name = "test_preprocessing",
+    srcs = glob([
+        "tests/test_preprocessing.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    deps = [":rttopp",
+            "@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main"
+    ],
+    copts = []
+)
+
+cc_test(
+    name = "param_tests",
+    srcs = glob([
+        "tests/param.cpp",
+        "include/rttopp/*.h"
+    ]),
+    includes = ["include"],
+    deps = [":rttopp",
+            "@json//:nlohmann_json",
+            "@com_gitlab_libeigen_eigen//:eigen",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main"
+    ],
+    copts = []
+)

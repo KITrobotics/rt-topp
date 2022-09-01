@@ -152,8 +152,8 @@ def calculate_path(positions, velocities, accelerations, jerks) -> Path:
 
 @dataclass(unsafe_hash=True)
 class PathParameterizationLimits:
-    position: np.array
-    vel_abs_max: np.array
+    forward_vel_abs_max: np.array
+    backward_vel_abs_max: np.array
     acc_abs_min: np.array
     acc_abs_max: np.array
     jerk_abs_min: np.array
@@ -178,8 +178,8 @@ class PathParameterizationLimits:
 
 
 def calculate_path_parameterization_limits(
-    positions,
-    vel_abs_max,
+    forward_vel_abs_max,
+    backward_vel_abs_max,
     acc_abs_min,
     acc_abs_max,
     jerk_abs_min,
@@ -198,8 +198,8 @@ def calculate_path_parameterization_limits(
     joint_acc_min,
     joint_acc_max,
 ) -> PathParameterizationLimits:
-    position = np.array(positions).reshape(-1, 1)
-    vel_abs_max = np.array(vel_abs_max).reshape(-1, 1)
+    forward_vel_abs_max = np.array(forward_vel_abs_max).reshape(-1, 1)
+    backward_vel_abs_max = np.array(backward_vel_abs_max).reshape(-1, 1)
     acc_abs_min = np.array(acc_abs_min).reshape(-1, 1)
     acc_abs_max = np.array(acc_abs_max).reshape(-1, 1)
     jerk_abs_min = np.array(jerk_abs_min).reshape(-1, 1)
@@ -224,8 +224,8 @@ def calculate_path_parameterization_limits(
     joint_acc_max = np.array(joint_acc_max).reshape(-1, n_joints).T
 
     return PathParameterizationLimits(
-        position,
-        vel_abs_max,
+        forward_vel_abs_max,
+        backward_vel_abs_max,
         acc_abs_min,
         acc_abs_max,
         jerk_abs_min,
@@ -248,23 +248,45 @@ def calculate_path_parameterization_limits(
 
 @dataclass(unsafe_hash=True)
 class Derivatives:
-    first: np.array
-    second: np.array
-    third: np.array
+    forward_first: np.array
+    forward_second: np.array
+    forward_third: np.array
+    backward_first: np.array
+    backward_second: np.array
+    backward_third: np.array
 
 
-def calculate_spline_derivatives(first, second, third) -> Derivatives:
-    n_joints = len(first[0])
-    firsts = np.array(first).reshape(-1, n_joints).T
-    seconds = np.array(second).reshape(-1, n_joints).T
-    thirds = np.array(third).reshape(-1, n_joints).T
+def calculate_spline_derivatives(
+    forward_first,
+    forward_second,
+    forward_third,
+    backward_first,
+    backward_second,
+    backward_third,
+) -> Derivatives:
+    n_joints = len(forward_first[0])
+    forward_firsts = np.array(forward_first).reshape(-1, n_joints).T
+    forward_seconds = np.array(forward_second).reshape(-1, n_joints).T
+    forward_thirds = np.array(forward_third).reshape(-1, n_joints).T
+    backward_firsts = np.array(backward_first).reshape(-1, n_joints).T
+    backward_seconds = np.array(backward_second).reshape(-1, n_joints).T
+    backward_thirds = np.array(backward_third).reshape(-1, n_joints).T
 
-    return Derivatives(firsts, seconds, thirds)
+    return Derivatives(
+        forward_firsts,
+        forward_seconds,
+        forward_thirds,
+        backward_firsts,
+        backward_seconds,
+        backward_thirds,
+    )
 
 
 @dataclass(unsafe_hash=True)
 class PathParameterization:
     timestamps: np.array
+    waypoint_indices: np.array
+    waypoint_s: np.array
     fw_path: Path
     bw_path: Path
     limits: PathParameterizationLimits
@@ -275,6 +297,8 @@ class PathParameterization:
 
 def read_path_parameterization_from_json_block(json_block) -> PathParameterization:
     timestamps = []
+    waypoint_indices = []
+    waypoint_s = []
     positions = []
     forward_velocities = []
     forward_accelerations = []
@@ -372,8 +396,183 @@ def read_path_parameterization_from_json_block(json_block) -> PathParameterizati
         positions, backward_velocities, backward_accelerations, backward_jerks
     )
     limits = calculate_path_parameterization_limits(
-        positions,
         vel_abs_max,
+        vel_abs_max,  # put it twice cause we don't differentiate here
+        acc_abs_min,
+        acc_abs_max,
+        jerk_abs_min,
+        jerk_abs_max,
+        acc_min,
+        acc_max,
+        backward_acc_min,
+        backward_acc_max,
+        jerk_min,
+        jerk_max,
+        singular_acceleration,
+        singular_jerk,
+        vel_third_max,
+        joint_vel_min,
+        joint_vel_max,
+        joint_acc_min,
+        joint_acc_max,
+    )
+    # put them twice, different values only needed for sampling
+    derivatives = calculate_spline_derivatives(
+        derivatives_first,
+        derivatives_second,
+        derivatives_third,
+        derivatives_first,
+        derivatives_second,
+        derivatives_third,
+    )
+
+    joint_trajectory = jointtraj_from_json_block(joint_traj_points)
+    optimization_time = 0.0
+    if "path_parameterization_optimization_time" in json_block:
+        optimization_time = (
+            float(json_block["path_parameterization_optimization_time"]) / 1.0e6
+        )
+
+    if "waypoints" in json_block:
+        for wp in json_block["waypoints"]:
+            waypoint_indices.append(wp["idx_on_path"])
+
+    if len(forward_path.s) > max(waypoint_indices):
+        print(len(forward_path.s))
+        print(waypoint_indices)
+        waypoint_s = [forward_path.s[idx] for idx in waypoint_indices]
+
+    return PathParameterization(
+        np.array(timestamps),
+        np.array(waypoint_indices, dtype=np.int16),
+        np.array(waypoint_s),
+        forward_path,
+        backward_path,
+        limits,
+        joint_trajectory,
+        optimization_time,
+        derivatives,
+    )
+
+
+# TODO(wolfgang): refactor with the duplicate code above
+def read_path_parameterization_from_json_block_sampling(
+    json_block,
+) -> PathParameterization:
+    timestamps = []
+    waypoint_indices = []
+    waypoint_s = []
+    forward_positions = []
+    backward_positions = []
+    forward_velocities = []
+    forward_accelerations = []
+    forward_jerks = []
+    backward_velocities = []
+    backward_accelerations = []
+    backward_jerks = []
+
+    forward_vel_abs_max = []
+    backward_vel_abs_max = []
+    acc_abs_min = []
+    acc_abs_max = []
+    jerk_abs_min = []
+    jerk_abs_max = []
+
+    acc_min = []
+    acc_max = []
+    backward_acc_min = []
+    backward_acc_max = []
+    jerk_min = []
+    jerk_max = []
+
+    joint_vel_min = []
+    joint_vel_max = []
+    joint_acc_min = []
+    joint_acc_max = []
+
+    singular_acceleration = []
+    singular_jerk = []
+
+    vel_third_max = []
+
+    forward_derivatives_first = []
+    forward_derivatives_second = []
+    forward_derivatives_third = []
+    backward_derivatives_first = []
+    backward_derivatives_second = []
+    backward_derivatives_third = []
+
+    joint_traj_points = {}
+    joint_traj_points["jointtrajpoints"] = []
+
+    for p in json_block["path_parameterization_bw"]:
+        backward_positions.append(p["position"])
+
+        backward_velocities.append(p["velocity"])
+        backward_accelerations.append(p["acceleration"])
+        if "jerk" in p:
+            backward_jerks.append(p["jerk"])
+
+        backward_vel_abs_max.append(p["vel_abs_max"])
+        if "acc_abs_min" in p:
+            acc_abs_min.append(p["acc_abs_min"])
+            acc_abs_max.append(p["acc_abs_max"])
+            jerk_abs_min.append(p["jerk_abs_min"])
+            jerk_abs_max.append(p["jerk_abs_max"])
+
+        backward_acc_min.append(p["acc_min"])
+        backward_acc_max.append(p["acc_max"])
+        if "jerk_min" in p:
+            jerk_min.append(p["jerk_min"])
+            jerk_max.append(p["jerk_max"])
+
+            singular_acceleration.append(p["singular_acceleration"])
+            singular_jerk.append(p["singular_jerk"])
+
+            vel_third_max.append(p["vel_third_max"])
+
+        joint_acc_min.append(p["joint_constraints"]["acc_min"])
+        joint_acc_max.append(p["joint_constraints"]["acc_max"])
+
+        # TODO(wolfgang): get them separately for forward and backward? already supported by cpp code
+        derivatives = p["derivatives"]
+        backward_derivatives_first.append(derivatives["first"])
+        backward_derivatives_second.append(derivatives["second"])
+        backward_derivatives_third.append(derivatives["third"])
+
+    for p in json_block["path_parameterization_fw"]:
+        forward_positions.append(p["position"])
+
+        forward_velocities.append(p["velocity"])
+        forward_accelerations.append(p["acceleration"])
+
+        acc_min.append(p["acc_min"])
+        acc_max.append(p["acc_max"])
+        forward_vel_abs_max.append(p["vel_abs_max"])
+
+        timestamps.append(p["time"])
+
+        joint_traj_points["jointtrajpoints"].append(p["jointtrajpoints"])
+
+        derivatives = p["derivatives"]
+        forward_derivatives_first.append(derivatives["first"])
+        forward_derivatives_second.append(derivatives["second"])
+        forward_derivatives_third.append(derivatives["third"])
+
+    if "joint_constraints" in json_block:
+        joint_constraints = json_block["joint_constraints"]
+        joint_vel_min = joint_constraints["vel_min"]
+        joint_vel_max = joint_constraints["vel_max"]
+
+    forward_path = calculate_path(
+        forward_positions, forward_velocities, forward_accelerations, forward_jerks
+    )
+    backward_path = calculate_path(
+        backward_positions, backward_velocities, backward_accelerations, backward_jerks
+    )
+    limits = calculate_path_parameterization_limits(
+        forward_vel_abs_max,
+        backward_vel_abs_max,
         acc_abs_min,
         acc_abs_max,
         jerk_abs_min,
@@ -393,7 +592,12 @@ def read_path_parameterization_from_json_block(json_block) -> PathParameterizati
         joint_acc_max,
     )
     derivatives = calculate_spline_derivatives(
-        derivatives_first, derivatives_second, derivatives_third
+        forward_derivatives_first,
+        forward_derivatives_second,
+        forward_derivatives_third,
+        backward_derivatives_first,
+        backward_derivatives_second,
+        backward_derivatives_third,
     )
 
     joint_trajectory = jointtraj_from_json_block(joint_traj_points)
@@ -403,8 +607,16 @@ def read_path_parameterization_from_json_block(json_block) -> PathParameterizati
             float(json_block["path_parameterization_optimization_time"]) / 1.0e6
         )
 
+    if "waypoints" in json_block:
+        for wp in json_block["waypoints"]:
+            waypoint_indices.append(wp["idx_on_path"])
+
+        waypoint_s = [backward_path.s[idx] for idx in waypoint_indices]
+
     return PathParameterization(
         np.array(timestamps),
+        np.array(waypoint_indices, dtype=np.int16),
+        np.array(waypoint_s),
         forward_path,
         backward_path,
         limits,
@@ -414,9 +626,11 @@ def read_path_parameterization_from_json_block(json_block) -> PathParameterizati
     )
 
 
-def path_parameterization_from_json(
-    file_path,
-) -> PathParameterization:
+def path_parameterization_from_json(file_path, sampling=False) -> PathParameterization:
     with open(file_path) as json_file:
         data = json.load(json_file)
-        return read_path_parameterization_from_json_block(data)
+
+        if not sampling:
+            return read_path_parameterization_from_json_block(data)
+
+        return read_path_parameterization_from_json_block_sampling(data)

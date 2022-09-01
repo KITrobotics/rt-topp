@@ -48,6 +48,14 @@ add_executable(param_random_waypoints_example_iiwa
                examples/param_random_waypoints_iiwa.cpp)
 target_link_libraries(param_random_waypoints_example_iiwa
                       PRIVATE ${PROJECT_NAME})
+add_executable(param_random_waypoints_generic_sampling_example
+               examples/param_random_waypoints_generic_sampling.cpp)
+target_link_libraries(param_random_waypoints_generic_sampling_example
+                      PRIVATE ${PROJECT_NAME})
+add_executable(param_failed_random_waypoints_example_generic
+               examples/param_failed_random_waypoints_generic.cpp)
+target_link_libraries(param_failed_random_waypoints_example_generic
+                      PRIVATE ${PROJECT_NAME} stdc++fs)
 
 add_executable(path_velocity_limit_tests tests/path_velocity_limit.cpp)
 target_link_libraries(path_velocity_limit_tests PRIVATE ${PROJECT_NAME}
@@ -57,3 +65,7 @@ add_test(NAME path_velocity_limit_tests COMMAND path_velocity_limit_tests)
 add_executable(preprocessing_tests tests/test_preprocessing.cpp)
 target_link_libraries(preprocessing_tests PRIVATE ${PROJECT_NAME} gtest_main)
 add_test(NAME preprocessing_tests COMMAND preprocessing_tests)
+
+add_executable(param_tests tests/param.cpp)
+target_link_libraries(param_tests PRIVATE ${PROJECT_NAME} gtest_main)
+add_test(NAME param_tests COMMAND param_tests)

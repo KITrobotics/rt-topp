@@ -47,6 +47,7 @@ class RTTOPP2 {
   // needs at least a call to initParameterization() first
   Result sampleFull(Trajectory<N_JOINTS> *trajectory);
 
+  // for sampling
   [[nodiscard]] Result verifyTrajectory(
       const Trajectory<N_JOINTS> &trajectory, bool verbose = false,
       size_t *num_idx = nullptr, double *mean = nullptr,
@@ -55,7 +56,8 @@ class RTTOPP2 {
   [[nodiscard]] Result verifyTrajectory(
       bool verbose = false, size_t *num_idx = nullptr, double *mean = nullptr,
       double *std_dev = nullptr, double *max_normalized_velocity = nullptr,
-      double *max_normalized_acceleration = nullptr) const;
+      double *max_normalized_acceleration = nullptr,
+      double *traj_length = nullptr) const;
 
   [[nodiscard]] nlohmann::json toJson(
       const Waypoints<N_JOINTS> &waypoints,
@@ -71,6 +73,8 @@ class RTTOPP2 {
       size_t current_idx, const PathState &current_state) const;
   [[nodiscard]] PathState integrateLocalBackward(
       size_t current_idx, const PathState &current_state) const;
+  [[nodiscard]] double calculateTimeDiff(const PathState &current_state,
+                                         const PathState &previous_state) const;
   [[nodiscard]] double calculatePathAcceleration(
       const PathState &current_state, const PathState &previous_state) const;
   [[nodiscard]] WaypointJoint<N_JOINTS> calculateJointDerivativeState(
@@ -143,7 +147,21 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::parameterizeFull(
     joint_trajectory_[idx] = calculateJointDerivativeState(
         path_state, preprocess_.getDerivatives(idx));
     joint_trajectory_[idx].position = preprocess_.getJointPositionFromPath(idx);
+
+    if (idx > 1) {
+      /* double diff = utils::getTimeStampDiff(forward_pass_states_[idx - 1],
+       * path_state.position); */
+      double diff =
+          calculateTimeDiff(path_state, forward_pass_states_[idx - 1]);
+      joint_trajectory_[idx].time = joint_trajectory_[idx - 1].time + diff;
+      /* std::cout << "timestamp diff " << diff << "; "; */
+      /* std::cout << "timestamp " << joint_trajectory_[idx - 1].time << "; ";
+       */
+    }
   }
+
+  /* std::cout << "traj length " << joint_trajectory_[num_idx_ - 1].time <<
+   * std::endl; */
 
   return result;
 }
@@ -345,6 +363,11 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::sample(
   }
 
   // TODO(wolfgang): egg, hen problem, needs to be recalculated if pos changes
+  // maybe use linear interpolation formula from above for velocity depending
+  // on position, but substitute path_state.position with formula for next path
+  // state (using position_diff) depending on path_state.velocity and solve for
+  // the velocity, then use position_diff to get corresponding path position
+  // see notes on work notepad
   auto joint_pos_derivatives_pair =
       preprocess_.computeJointPositionAndDerivatives(path_state.position +
                                                      position_diff);
@@ -655,6 +678,16 @@ double RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::calculatePathAcceleration(
 }
 
 template <size_t N_JOINTS, size_t MAX_WAYPOINTS, size_t MAX_STEPS>
+double RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::calculateTimeDiff(
+    const PathState &current_state, const PathState &previous_state) const {
+  const auto delta_position = current_state.position - previous_state.position;
+
+  // follows from second-order equations of motions
+  return 2.0 * delta_position /
+         (current_state.velocity + previous_state.velocity);
+}
+
+template <size_t N_JOINTS, size_t MAX_WAYPOINTS, size_t MAX_STEPS>
 WaypointJoint<N_JOINTS>
 RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::calculateJointDerivativeState(
     const PathState &current_state,
@@ -844,12 +877,12 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
   return Result::SUCCESS;
 }
 
-// TODO(wolfgang): refactor with the duplicate code above
+// TODO(wolfgang): refactor with the duplicate code above, above for sampling
 template <size_t N_JOINTS, size_t MAX_WAYPOINTS, size_t MAX_STEPS>
 Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
     const bool verbose, size_t *num_idx, double *mean, double *std_dev,
-    double *max_normalized_velocity,
-    double *max_normalized_acceleration) const {
+    double *max_normalized_velocity, double *max_normalized_acceleration,
+    double *traj_length) const {
   PathVelocityLimit<N_JOINTS> path_velocity_limit(constraints_.joints);
 
   for (size_t idx = 0; idx < num_idx_; ++idx) {
@@ -964,6 +997,10 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
     *max_normalized_acceleration = max_normalized_accel;
   }
 
+  if (traj_length != nullptr) {
+    *traj_length = joint_trajectory_[num_idx_ - 1].time;
+  }
+
   if (verbose) {
     std::cout << "trajectory evaluation data:" << std::endl;
     std::cout << "number of nodes: " << num_idx_ << std::endl;
@@ -972,7 +1009,9 @@ Result RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::verifyTrajectory(
               << std::endl;
     std::cout << "infinity norm of velocities and accelerations: mean "
               << mean_local << ", standard deviation " << std_dev_local
-              << std::endl
+              << std::endl;
+    std::cout << "trajectory length " << joint_trajectory_[num_idx_ - 1].time
+              << " seconds" << std::endl
               << std::endl;
   }
 
@@ -1105,7 +1144,8 @@ nlohmann::json RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::toJson(
   return j;
 }
 
-// TODO(wolfgang): refactor this with duplicate code above
+// TODO(wolfgang): refactor this with duplicate code above, this is without
+// sampling
 template <size_t N_JOINTS, size_t MAX_WAYPOINTS, size_t MAX_STEPS>
 nlohmann::json RTTOPP2<N_JOINTS, MAX_WAYPOINTS, MAX_STEPS>::toJson(
     const Waypoints<N_JOINTS> &waypoints) const {

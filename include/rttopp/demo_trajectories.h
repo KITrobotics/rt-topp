@@ -9,7 +9,10 @@ namespace rttopp::demo_trajectories {
 const size_t NUM_IIWA_JOINTS = 7;
 
 JointConstraints<NUM_IIWA_JOINTS> generateIIWAJointConstraints();
+JointConstraints<NUM_IIWA_JOINTS> generateAsymmetricJointConstraints();
 std::array<double, NUM_IIWA_JOINTS> iiwaJointPositionLimits();
+
+void initPerf();
 
 template <std::size_t N_JOINTS>
 JointConstraints<N_JOINTS> generateGenericJointConstraints() {

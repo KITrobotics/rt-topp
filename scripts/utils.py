@@ -87,7 +87,8 @@ def setup_matplotlib():
     """
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["font.serif"] = ["Times New Roman"] + plt.rcParams["font.serif"]
-    plt.rcParams["font.size"] = 14
+    # plt.rcParams["font.size"] = 20 # slides
+    plt.rcParams["font.size"] = 10
     plt.rcParams["mathtext.fontset"] = "cm"
     plt.rcParams["text.usetex"] = True
     plt.rcParams[
@@ -96,10 +97,14 @@ def setup_matplotlib():
     plt.rcParams["pgf.preamble"] = plt.rcParams["text.latex.preamble"]
     plt.rcParams["legend.loc"] = "upper right"
     # plt.rcParams["legend.fontsize"] = 10
-    plt.rcParams["axes.titlesize"] = "large"
-    plt.rcParams["axes.labelsize"] = "large"
-    # plt.rcParams["xtick.labelsize"] = 12
-    # plt.rcParams["ytick.labelsize"] = 12
+
+    # for slides
+    # plt.rcParams["axes.titlesize"] = "large"
+    # plt.rcParams["axes.labelsize"] = "large"
+    # plt.rcParams["xtick.labelsize"] = 20
+    # plt.rcParams["ytick.labelsize"] = 20
+
+    plt.rcParams["axes.titlesize"] = "10"
 
     plt.rcParams["figure.autolayout"] = True
 

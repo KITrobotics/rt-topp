@@ -108,11 +108,27 @@ TEST(PathVelocityLimit, MVC2JointAccelLimitsDerivFirstZero) {
   std::tie(acc_min, acc_max) =
       path_acceleration_limits.calculateDynamicLimits(state, derivatives);
   EXPECT_LT(acc_min, acc_max);
-  // TODO(wolfgang): not entirely sure why, but in this MVC2 case with one first
-  // deriv zero, acc_min and acc_max do not converge. Maybe because this axis is
-  // ignored during acc limit calculation, but the MVC2 computation still
-  // ensures that no acc limits are violated at this velocity. EXPECT_GT(acc_min
-  // + MVC2_ACC_TOL, acc_max);
+
+  // MVC2_ACC_TOL is too tight here
+  // in this MVC2 case with one first deriv zero, acc_min and acc_max do not
+  // converge. The MVC2 computation still ensures that no acc limits are
+  // violated at this velocity. This can be verified by using a velocity
+  // slightly above the MVC2 value and the acc_min from there. The joint
+  // acceleration limits are then exceeded by acc_min
+  // EXPECT_GT(acc_min + MVC2_ACC_TOL_GENERIC, acc_max);
+
+  // double vel_limit_first =
+  // path_velocity_limit.calculateJointVelocityLimit(derivatives); std::cout <<
+  // "overall vel " << state.velocity << ", MVC1 vel " << vel_limit_first <<
+  // std::endl;
+
+  // double acc_min_above, acc_max_above;
+  // rttopp::PathState state_above;
+  // state_above.velocity = 7.4;
+  // std::tie(acc_min_above, acc_max_above) =
+  //   path_acceleration_limits.calculateDynamicLimits(state_above,
+  //   derivatives);
+  // EXPECT_GT(acc_min_above, acc_max_above);
 
   rttopp::WaypointJoint<n_joints> joint_state;
   joint_state.velocity = derivatives.first * state.velocity;
@@ -130,6 +146,33 @@ TEST(PathVelocityLimit, MVC2JointAccelLimitsDerivFirstZero) {
     EXPECT_GT(joint_state.acceleration[joint],
               joint_constraints.acceleration_min[joint]);
   }
+}
+
+TEST(PathVelocityLimit, MVC2AsymmetricAccel) {
+  const size_t n_joints = rttopp::demo_trajectories::NUM_IIWA_JOINTS;
+  const auto joint_constraints =
+      rttopp::demo_trajectories::generateAsymmetricJointConstraints();
+
+  rttopp::PathVelocityLimit<n_joints> path_velocity_limit(joint_constraints);
+  rttopp::PathAccelerationLimits<n_joints> path_acceleration_limits(
+      joint_constraints);
+  rttopp::JointPathDerivatives<n_joints> derivatives;
+  rttopp::PathState state;
+
+  derivatives.first << -0.280813, 0.0148062, 0.0675328, 0.139644, 0.048934,
+      0.211088, -0.0415441;
+
+  derivatives.second << 0.309321, -0.040599, 0.156172, 0.0402263, -0.277464,
+      0.0654477, -0.162114;
+
+  state.velocity = path_velocity_limit.calculateOverallLimit(derivatives);
+  // std::cout << "vel lim " << state.velocity << std::endl;
+  // state.velocity = 5.3;
+
+  double acc_min, acc_max;
+  std::tie(acc_min, acc_max) =
+      path_acceleration_limits.calculateDynamicLimits(state, derivatives);
+  EXPECT_LT(acc_min, acc_max);
 }
 
 TEST(PathVelocityLimit, RandomWaypointsIIWA) {
@@ -190,6 +233,12 @@ TEST(PathVelocityLimit, RandomWaypointsIIWA) {
       std::tie(acc_min, acc_max) =
           path_acceleration_limits.calculateDynamicLimits(state, derivatives);
       EXPECT_LT(acc_min, acc_max);
+      if (acc_min > acc_max) {
+        std::cout << "acc_min greater than acc_max " << vel_limit_first << ", "
+                  << vel_limit_second << std::endl;
+        std::cout << std::endl << derivatives.first << std::endl;
+        std::cout << std::endl << derivatives.second << std::endl;
+      }
 
       if (vel_limit_second < vel_limit_first) {
         //         if (max_path_velocity < vel_limit_second) {
@@ -199,9 +248,114 @@ TEST(PathVelocityLimit, RandomWaypointsIIWA) {
 
         EXPECT_GT(acc_min + MVC2_ACC_TOL_GENERIC, acc_max);
         // if (acc_min + MVC2_ACC_TOL < acc_max) {
-        //   std::cout << "acc tol violated kunz " << max_path_velocity << ", "
+        //   std::cout << "acc tol violated MVC2 " << vel_limit_first << ", "
         //   << vel_limit_second << std::endl; std::cout << derivatives.first <<
-        //   std::endl; std::cout << derivatives.second << std::endl;
+        //                                       std::endl; std::cout <<
+        //                                       std::endl << derivatives.second
+        //                                       << std::endl;
+        //   std::cout << "trajectory " << t << ", segment " << seg <<
+        //   std::endl;
+
+        //   double acc_min_above, acc_max_above;
+        //   rttopp::PathState state_above;
+        //   state_above.velocity = vel_limit_second + 0.01;
+        //   std::tie(acc_min_above, acc_max_above) =
+        //   path_acceleration_limits.calculateDynamicLimits(state_above,
+        //   derivatives); EXPECT_GT(acc_min_above, acc_max_above);
+        // }
+      }
+
+      joint_state.velocity = derivatives.first * state.velocity;
+      state.acceleration = acc_min;
+      joint_state.acceleration =
+          derivatives.second * rttopp::utils::pow(state.velocity, 2) +
+          derivatives.first * state.acceleration;
+      bool joint_at_limit = false;
+      for (size_t joint = 0; joint < n_joints; ++joint) {
+        EXPECT_LT(joint_state.velocity[joint],
+                  joint_constraints.velocity_max[joint]);
+        EXPECT_GT(joint_state.velocity[joint],
+                  joint_constraints.velocity_min[joint]);
+        EXPECT_LT(joint_state.acceleration[joint],
+                  joint_constraints.acceleration_max[joint]);
+        EXPECT_GT(joint_state.acceleration[joint],
+                  joint_constraints.acceleration_min[joint]);
+        if (joint_state.velocity[joint] - MVC1_VEL_TOL <=
+                joint_constraints.velocity_min[joint] ||
+            joint_state.velocity[joint] + MVC1_VEL_TOL >=
+                joint_constraints.velocity_max[joint]) {
+          joint_at_limit = true;
+        }
+      }
+      if (vel_limit_first <= vel_limit_second) {
+        EXPECT_TRUE(joint_at_limit);
+      }
+    }
+  }
+}
+
+TEST(PathVelocityLimit, RandomWaypointsAsymConstraints) {
+  const size_t N_TRAJECTORIES = 3.0e04;
+  const size_t N_WAYPOINTS = 5;
+
+  const size_t n_joints = rttopp::demo_trajectories::NUM_IIWA_JOINTS;
+  const auto joint_constraints =
+      rttopp::demo_trajectories::generateAsymmetricJointConstraints();
+
+  rttopp::PathVelocityLimit<n_joints> path_velocity_limit(joint_constraints);
+  rttopp::PathAccelerationLimits<n_joints> path_acceleration_limits(
+      joint_constraints);
+  rttopp::Preprocessing<n_joints> preprocessing;
+  rttopp::JointPathDerivatives<n_joints> derivatives;
+  rttopp::PathState state;
+  rttopp::WaypointJoint<n_joints> joint_state;
+
+  for (size_t t = 0; t < N_TRAJECTORIES; ++t) {
+    const auto waypoints =
+        rttopp::demo_trajectories::generateRandomJointWaypoints<n_joints>(
+            N_WAYPOINTS, rttopp::demo_trajectories::iiwaJointPositionLimits());
+    size_t n_seg = preprocessing.processWaypoints(waypoints);
+    for (size_t seg = 0; seg < n_seg; ++seg) {
+      derivatives = preprocessing.getDerivatives(seg);
+      const auto vel_limit_first =
+          path_velocity_limit.calculateJointVelocityLimit(derivatives);
+      const auto vel_limit_second =
+          path_velocity_limit.calculateJointAccelerationLimit(derivatives);
+
+      state.velocity = std::min(vel_limit_first, vel_limit_second);
+      double acc_min, acc_max;
+      std::tie(acc_min, acc_max) =
+          path_acceleration_limits.calculateDynamicLimits(state, derivatives);
+      EXPECT_LT(acc_min, acc_max);
+      if (acc_min > acc_max) {
+        std::cout << "acc_min greater than acc_max " << vel_limit_first << ", "
+                  << vel_limit_second << std::endl;
+        std::cout << std::endl << derivatives.first << std::endl;
+        std::cout << std::endl << derivatives.second << std::endl;
+      }
+
+      if (vel_limit_second < vel_limit_first) {
+        //         if (max_path_velocity < vel_limit_second) {
+        //   std::cout << "kunz smaller! " << max_path_velocity << ", " <<
+        //   vel_limit_second << std::endl;
+        // }
+
+        EXPECT_GT(acc_min + MVC2_ACC_TOL_GENERIC, acc_max);
+        // if (acc_min + MVC2_ACC_TOL < acc_max) {
+        //   std::cout << "acc tol violated MVC2 " << vel_limit_first << ", "
+        //   << vel_limit_second << std::endl; std::cout << derivatives.first <<
+        //                                       std::endl; std::cout <<
+        //                                       std::endl << derivatives.second
+        //                                       << std::endl;
+        //   std::cout << "trajectory " << t << ", segment " << seg <<
+        //   std::endl;
+
+        //   double acc_min_above, acc_max_above;
+        //   rttopp::PathState state_above;
+        //   state_above.velocity = vel_limit_second + 0.01;
+        //   std::tie(acc_min_above, acc_max_above) =
+        //   path_acceleration_limits.calculateDynamicLimits(state_above,
+        //   derivatives); EXPECT_GT(acc_min_above, acc_max_above);
         // }
       }
 

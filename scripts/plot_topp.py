@@ -17,31 +17,31 @@ def plot_2d_path_parameterization(path_parameterization: PathParameterization):
     rows = 2
     n_idx = path_parameterization.bw_path.s.reshape(-1).shape[0]
     fig_x = n_idx // 30
-    _, ax = plt.subplots(
+    fig, ax = plt.subplots(
         nrows=rows, ncols=1, sharex=True, sharey=False, figsize=(fig_x, 8)
     )
     ax[0].set_title(r"Path velocity")
-    ax[0].set_ylabel(r"$\dot{s}$")
+    ax[0].set_ylabel(r"$\dot{s} \quad [\mathrm{rad/s}]$")
     ax[1].set_title(r"Path acceleration")
-    ax[1].set_ylabel(r"$\ddot{s}$")
-    plt.xlabel(r"idx")
+    ax[1].set_ylabel(r"$\ddot{s} \quad [\mathrm{rad/s^2}]$")
+    plt.xlabel(r"$s$")
 
     ax[0].plot(
         range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
         path_parameterization.fw_path.s_dot,
-        label="fw param",
-        marker=".",
+        label="forward param",
+        # marker=".",
     )
     ax[0].plot(
         range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
         path_parameterization.limits.forward_vel_abs_max,
-        label="first + second max",
+        label="MVC (max velocity)",
     )
     ax[0].plot(
         range(path_parameterization.bw_path.s.reshape(-1).shape[0]),
         path_parameterization.bw_path.s_dot,
-        label="bw param",
-        marker=".",
+        label="backward param",
+        # marker=".",
     )
     ax[0].vlines(
         x=path_parameterization.waypoint_indices,
@@ -49,7 +49,7 @@ def plot_2d_path_parameterization(path_parameterization: PathParameterization):
         ymin=np.ones_like(path_parameterization.waypoint_indices)
         * np.mean(path_parameterization.limits.forward_vel_abs_max)
         * 3.0,
-        label="Waypoints",
+        label="waypoints",
         color="b",
     )
     ax[0].set_ylim(
@@ -61,33 +61,33 @@ def plot_2d_path_parameterization(path_parameterization: PathParameterization):
         range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
         path_parameterization.fw_path.s_ddot,
         label="fw param",
-        marker=".",
+        # marker=".",
     )
     ax[1].plot(
         range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
         path_parameterization.limits.acc_min,
-        label="dyn min",
+        label="$a_{min}$",
     )
     ax[1].plot(
         range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
         path_parameterization.limits.acc_max,
-        label="dyn max",
+        label="$a_{max}$",
     )
-    ax[1].plot(
-        range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
-        path_parameterization.limits.backward_acc_min,
-        label="bw dyn min",
-    )
-    ax[1].plot(
-        range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
-        path_parameterization.limits.backward_acc_max,
-        label="bw dyn max",
-    )
+    # ax[1].plot(
+    #     range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
+    #     path_parameterization.limits.backward_acc_min,
+    #     label="bw dyn min",
+    # )
+    # ax[1].plot(
+    #     range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
+    #     path_parameterization.limits.backward_acc_max,
+    #     label="bw dyn max",
+    # )
     ax[1].plot(
         range(path_parameterization.bw_path.s.reshape(-1).shape[0]),
         path_parameterization.bw_path.s_ddot,
         label="bw param",
-        marker=".",
+        # marker=".",
     )
     ax[1].set_ylim(
         # -abs(np.mean(path_parameterization.fw_path.s_ddot)),
@@ -100,10 +100,91 @@ def plot_2d_path_parameterization(path_parameterization: PathParameterization):
         ax[i].grid()
         ax[i].legend()
         ax[i].set_xticks(
-            range(0, path_parameterization.fw_path.s.reshape(-1).shape[0] + 1, 10)
+            range(0, path_parameterization.fw_path.s.reshape(-1).shape[0] + 1, 50)
         )
     plt.xlim(0, path_parameterization.fw_path.s.reshape(-1).shape[0])
+
+    fig.set_size_inches(w=6.0, h=5.0)
     plt.tight_layout(pad=0.0)
+    plt.savefig("topp_phase.pgf", dpi=400)
+
+    plt.show()
+
+
+def plot_2d_path_velocity(path_parameterization: PathParameterization):
+    rows = 1
+    n_idx = path_parameterization.bw_path.s.reshape(-1).shape[0]
+    fig_x = n_idx // 30
+    fig, ax = plt.subplots(
+        nrows=rows, ncols=1, sharex=True, sharey=False, figsize=(fig_x, 8)
+    )
+    ax.set_title(r"Path velocity")
+    ax.set_ylabel(r"$\dot{s} \quad [\mathrm{rad/s}]$")
+    plt.xlabel(r"$s$")
+
+    ax.fill_between(
+        range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
+        np.zeros_like(path_parameterization.limits.forward_vel_abs_max).flatten(),
+        path_parameterization.limits.forward_vel_abs_max.flatten(),
+        color="green",
+        alpha=0.2,
+        label="valid range",
+    )
+
+    ax.fill_between(
+        range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
+        path_parameterization.limits.forward_vel_abs_max.flatten(),
+        20.0,
+        color="red",
+        alpha=0.2,
+        label="forbidden range",
+    )
+
+    ax.plot(
+        range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
+        path_parameterization.fw_path.s_dot,
+        label="forward param",
+        marker=".",
+    )
+    ax.plot(
+        range(path_parameterization.fw_path.s.reshape(-1).shape[0]),
+        path_parameterization.limits.forward_vel_abs_max,
+        label="MVC (max velocity)",
+    )
+    ax.plot(
+        range(path_parameterization.bw_path.s.reshape(-1).shape[0]),
+        path_parameterization.bw_path.s_dot,
+        label="backward param",
+        marker=".",
+    )
+    ax.vlines(
+        x=path_parameterization.waypoint_indices,
+        ymax=np.zeros_like(path_parameterization.waypoint_indices),
+        ymin=np.ones_like(path_parameterization.waypoint_indices)
+        * np.mean(path_parameterization.limits.forward_vel_abs_max)
+        * 3.0,
+        label="waypoints",
+        color="b",
+    )
+    ax.set_ylim(
+        0.0,
+        np.mean(path_parameterization.limits.forward_vel_abs_max) * 2.2,
+    )
+
+    ax.grid()
+    ax.legend()
+    ax.set_xticks(
+        range(0, path_parameterization.fw_path.s.reshape(-1).shape[0] + 1, 50)
+    )
+    plt.xlim(0, path_parameterization.fw_path.s.reshape(-1).shape[0])
+
+    # data: -p ../data/random_waypoints_generic_sampling/param_random_waypoints_full_5_0.json
+    # https://jwalton.info/Embed-Publication-Matplotlib-Latex/#comment-4904502735
+    # size for thesis
+    fig.set_size_inches(w=6.0, h=4.5)
+    plt.tight_layout(pad=0.0)
+    plt.savefig("topp_vel_phase.pgf", dpi=400)
+
     plt.show()
 
 
@@ -210,7 +291,7 @@ def plot_joint_parameterization(path_parameterization: PathParameterization):
     n_joints = path_parameterization.joint_trajectory.velocities.shape[0]
     n_idx = path_parameterization.bw_path.s.reshape(-1).shape[0]
     fig_x = n_idx // 30
-    _, ax = plt.subplots(
+    fig, ax = plt.subplots(
         nrows=rows, ncols=1, sharex=True, sharey=False, figsize=(fig_x, 8)
     )
     ax[0].set_title(r"Joint positions")
@@ -219,33 +300,34 @@ def plot_joint_parameterization(path_parameterization: PathParameterization):
     ax[1].set_ylabel(r"$\bm{\dot{q}}$ [\si{\radian/\second}]")
     ax[2].set_title(r"Joint accelerations")
     ax[2].set_ylabel(r"$\bm{\ddot{q}}$ [\si{\radian/\square\second}]")
-    plt.xlabel(r"idx")
+    plt.xlabel(r"$s$")  # actually number of gridpoints, not rad
 
     ax[0].vlines(
         x=path_parameterization.waypoint_indices,
         ymax=np.ones_like(path_parameterization.waypoint_indices) * 3.14,
         ymin=np.ones_like(path_parameterization.waypoint_indices) * -3.14,
-        label="Waypoints",
+        label="waypoints",
         color="b",
     )
 
+    # markers removed for smaller lines and file size pgf
     for i in range(n_joints):
         ax[0].plot(
             range(path_parameterization.bw_path.s.reshape(-1).shape[0]),
             path_parameterization.joint_trajectory.positions[i],
-            marker=".",
+            # marker=".",
             label=r"$q_" + str(i + 1) + "$",
         )
         ax[1].plot(
             range(path_parameterization.bw_path.s.reshape(-1).shape[0]),
             path_parameterization.joint_trajectory.velocities[i],
-            marker=".",
+            # marker=".",
             label=r"$\dot{q}_" + str(i + 1) + "$",
         )
         ax[2].plot(
             range(path_parameterization.bw_path.s.reshape(-1).shape[0]),
             path_parameterization.joint_trajectory.accelerations[i],
-            marker=".",
+            # marker=".",
             label=r"$\ddot{q}_" + str(i + 1) + "$",
         )
     dof_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"][0:n_joints]
@@ -273,12 +355,12 @@ def plot_joint_parameterization(path_parameterization: PathParameterization):
         ymin=np.ones_like(path_parameterization.waypoint_indices)
         * np.min(path_parameterization.limits.joint_vel_min)
         * 1.5,
-        label="Waypoints",
+        label="waypoints",
         color="b",
     )
     ax[1].set_ylim(
-        np.min(path_parameterization.limits.joint_vel_min) * 1.5,
-        np.max(path_parameterization.limits.joint_vel_max) * 1.5,
+        np.min(path_parameterization.limits.joint_vel_min) * 1.1,
+        np.max(path_parameterization.limits.joint_vel_max) * 1.1,
     )
 
     ax[2].hlines(
@@ -300,8 +382,8 @@ def plot_joint_parameterization(path_parameterization: PathParameterization):
         alpha=0.7,
     )
     ax[2].set_ylim(
-        np.min(path_parameterization.limits.joint_acc_min) * 1.5,
-        np.max(path_parameterization.limits.joint_acc_max) * 1.5,
+        np.min(path_parameterization.limits.joint_acc_min) * 1.1,
+        np.max(path_parameterization.limits.joint_acc_max) * 1.1,
     )
     ax[2].vlines(
         x=path_parameterization.waypoint_indices,
@@ -311,7 +393,7 @@ def plot_joint_parameterization(path_parameterization: PathParameterization):
         ymin=np.ones_like(path_parameterization.waypoint_indices)
         * np.min(path_parameterization.limits.joint_acc_min)
         * 1.5,
-        label="Waypoints",
+        label="waypoints",
         color="b",
     )
 
@@ -319,10 +401,17 @@ def plot_joint_parameterization(path_parameterization: PathParameterization):
         ax[i].grid()
         ax[i].legend()
         ax[i].set_xticks(
-            range(0, path_parameterization.fw_path.s.reshape(-1).shape[0] + 1, 10)
+            range(0, path_parameterization.fw_path.s.reshape(-1).shape[0] + 1, 50)
         )
     plt.xlim(0, path_parameterization.fw_path.s.reshape(-1).shape[0])
     plt.tight_layout(pad=0.0)
+
+    # thesis
+    fig.set_size_inches(w=6.0, h=7.5)
+    plt.tight_layout(pad=0.0)
+    plt.savefig("topp_joints.pgf", dpi=400)
+    # plt.savefig("topp_joints.pdf", bbox_inches='tight')
+
     plt.show()
 
 
@@ -624,6 +713,7 @@ def main():
         plot_2d_path_parameterization_sampling(path_parameterization)
     else:
         plot_2d_path_parameterization(path_parameterization)
+        # plot_2d_path_velocity(path_parameterization)
 
     # plotting EEF path would also be nice (needs kinematics operations)
 

@@ -15,10 +15,20 @@ int main(int argc, char** argv) {
 
   constraints.joints =
       rttopp::demo_trajectories::generateIIWAJointConstraints();
+  // asymmetric also works
+  // rttopp::demo_trajectories::generateAsymmetricJointConstraints();
 
   auto waypoints =
       rttopp::demo_trajectories::generateRandomJointWaypoints<n_joints>(
           N_WAYPOINTS, rttopp::demo_trajectories::iiwaJointPositionLimits());
+
+  // set a small velocity at start and end
+  waypoints.front().joints.velocity =
+      0.3 * rttopp::WaypointJointDataType<n_joints>::Ones();
+  waypoints.back().joints.velocity =
+      0.3 * rttopp::WaypointJointDataType<n_joints>::Ones();
+
+  rttopp::demo_trajectories::initPerf();
 
   const auto t1 = std::chrono::high_resolution_clock::now();
   rttopp::Result result = topp.parameterizeFull(constraints, waypoints);

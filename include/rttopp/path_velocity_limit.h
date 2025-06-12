@@ -153,7 +153,11 @@ double PathVelocityLimit<N_JOINTS>::calculateJointAccelerationLimit1(
         (first_i > 0.0) ? joint_constraints_.acceleration_max[i]
                         : joint_constraints_.acceleration_min[i];
 
-    for (size_t j = i + 1; j < N_JOINTS; ++j) {
+    for (size_t j = 0; j < N_JOINTS; ++j) {
+      if (i == j) {
+        continue;
+      }
+
       const auto first_j = joint_path_derivative_state.first(j);
       const auto second_j = joint_path_derivative_state.second(j);
       const auto cond_j = !utils::isZero(first_j);
@@ -166,7 +170,7 @@ double PathVelocityLimit<N_JOINTS>::calculateJointAccelerationLimit1(
           (first_j > 0.0) ? joint_constraints_.acceleration_min[j]
                           : joint_constraints_.acceleration_max[j];
 
-      const auto a = std::abs((second_i / first_i) - (second_j / first_j));
+      const auto a = (second_i / first_i) - (second_j / first_j);
       if (utils::isZero(a)) {
         continue;
       }
@@ -174,7 +178,7 @@ double PathVelocityLimit<N_JOINTS>::calculateJointAccelerationLimit1(
                      (acceleration_abs_min_j / first_j);
 
       // b > 0.0 check should also cover cases where acc_min > 0 or acc_max < 0
-      if (b > 0.0) {
+      if ((a > 0.0 && b >= 0.0) || (a < 0.0 && b < 0.0)) {
         const auto velocity_candidate = std::sqrt(b / a);
         velocity_max = std::min(velocity_max, velocity_candidate);
       }

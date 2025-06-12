@@ -1,5 +1,7 @@
 #pragma once
 
+/* #include <iostream> */
+
 #include <limits>
 #include <optional>
 #include <vector>
@@ -123,6 +125,8 @@ struct WaypointJoint {
   WaypointJointDataType<N_DOF> velocity = WaypointJointDataType<N_DOF>::Zero();
   WaypointJointDataType<N_DOF> acceleration =
       WaypointJointDataType<N_DOF>::Zero();
+
+  double time = 0.0;
 };
 
 struct WaypointCartesian {
@@ -147,7 +151,7 @@ struct PathState {
   double position;
   double velocity = 0.0;
   double acceleration = 0.0;
-  double jerk = 0.0;
+  /* double jerk = 0.0; */
 
   // dynamic max and min acceleration
   double acc_max, acc_min = 0.0;
@@ -200,6 +204,57 @@ constexpr T pow(T x, unsigned int y) {
   return y == 0 ? 1.0 : x * pow(x, y - 1);
 }
 
+// TODO(wolfgang): remove this if calculateTimeDiff() proves to be the better
+// solution
+/* [[nodiscard]] static double getTimeStampDiff(const PathState &current_state,
+ */
+/*                                 double next_state_pos) { */
+
+/*   /\* solve with vel at next pos, otherwise may not be stable!! *\/ */
+
+/*   // p = p0 + v0*t + 0.5 * a * t^2 */
+/*   // -> a * x^2 + b * x + c = 0 */
+/*   const double a = current_state.acceleration / 2.0; */
+/*   const double b = current_state.velocity; */
+/*   double c = current_state.position - next_state_pos; */
+
+/*   if (isZero(a)) { */
+/*     return -c / b; */
+/*   } */
+
+/*   /\* if (isZero(b)) { *\/ */
+/*   /\*   c = -c; *\/ */
+/*   /\* } *\/ */
+
+/*   double disc = utils::pow(b, 2) - 4.0 * a * c; */
+/*   double den = 2.0 * a; */
+/*   double p1 = -b / den; */
+/*   double p2 = std::sqrt(disc) / den; */
+/*   double s1 = p1 + p2; */
+/*   double s2 = p1 -p2; */
+
+/*   if (s1 > 0.0 && s2 > 0.0) { */
+/*     return std::min(s1, s2); */
+/*   } */
+
+/*   if (s1 < 0.0 && s2 < 0.0) { */
+/*     std::cout << "both time sol < 0!!" << std::endl; */
+/*   } */
+
+/*   if (disc < 0) { */
+/*     std::cout << "disc < 0!!, b " << b << ", a " << a << ", c " << c <<
+ * std::endl; */
+/*     // TODO(wolfgang): really the correct solution? */
+/*     return 0.0; */
+/*   } */
+
+/*   if (!std::isfinite(s1) || !std::isfinite(s2)) { */
+/*     std::cout << "one value nan!!" << std::endl; */
+/*   } */
+
+/*   return s1 > 0.0 ? s1 : s2; */
+/* } */
+
 /**
  * @brief Creates a vector container e.g std::vector from Eigen matrix
  *
@@ -230,6 +285,7 @@ nlohmann::json jointStateToJson(const WaypointJoint<N_JOINTS> &joint_state) {
   j["angle"] = eigen_to_std(joint_state.position);
   j["velocity"] = eigen_to_std(joint_state.velocity);
   j["acceleration"] = eigen_to_std(joint_state.acceleration);
+  j["time"] = joint_state.time;
 
   return j;
 }

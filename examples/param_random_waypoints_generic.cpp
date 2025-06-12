@@ -5,23 +5,29 @@
 #include <rttopp/demo_trajectories.h>
 #include <rttopp/rttopp2.h>
 
+// TODO(wolfgang): do Google Benchmark for final evaluation (better assumption
+// of max times)?
+
 // When using start/goal velocity 1.0 and checking start/goal state for
 // validity, already run 67 has invaid start velocity. when testing with 0.4
 // start/goal velocity, path 9616 has a too high start velocity.
-constexpr auto N_TRAJECTORIES = 9 * 1000;
+constexpr auto N_TRAJECTORIES = 10 * 1000;
 constexpr auto N_WAYPOINTS = 5;
 
 int main(int argc, char** argv) {
-  const size_t n_joints = 6;
+  const size_t n_joints = 7;
   rttopp::RTTOPP2<n_joints> topp;
-  Eigen::VectorXd durations(N_TRAJECTORIES), inf_means(N_TRAJECTORIES),
-      inf_std_devs(N_TRAJECTORIES), nums_gridpoints(N_TRAJECTORIES),
+  Eigen::VectorXd durations(N_TRAJECTORIES), traj_durations(N_TRAJECTORIES),
+      inf_means(N_TRAJECTORIES), inf_std_devs(N_TRAJECTORIES),
+      nums_gridpoints(N_TRAJECTORIES),
       max_normalized_velocities(N_TRAJECTORIES),
       max_normalized_accelerations(N_TRAJECTORIES);
 
   rttopp::Constraints<n_joints> constraints;
   constraints.joints =
       rttopp::demo_trajectories::generateGenericJointConstraints<n_joints>();
+
+  rttopp::demo_trajectories::initPerf();
 
   for (size_t i = 0; i < N_TRAJECTORIES; ++i) {
     auto waypoints =
@@ -31,9 +37,9 @@ int main(int argc, char** argv) {
 
     // set a small velocity at start and end
     waypoints.front().joints.velocity =
-        0.4 * rttopp::WaypointJointDataType<n_joints>::Ones();
+        0.3 * rttopp::WaypointJointDataType<n_joints>::Ones();
     waypoints.back().joints.velocity =
-        0.4 * rttopp::WaypointJointDataType<n_joints>::Ones();
+        0.3 * rttopp::WaypointJointDataType<n_joints>::Ones();
 
     const auto t1 = std::chrono::high_resolution_clock::now();
     rttopp::Result result = topp.parameterizeFull(constraints, waypoints);
@@ -53,7 +59,8 @@ int main(int argc, char** argv) {
     size_t num_gridpoints;
     result = topp.verifyTrajectory(
         false, &num_gridpoints, &inf_means[i], &inf_std_devs[i],
-        &max_normalized_velocities[i], &max_normalized_accelerations[i]);
+        &max_normalized_velocities[i], &max_normalized_accelerations[i],
+        &traj_durations[i]);
     nums_gridpoints[i] = num_gridpoints;
 
     if ((argc > 1 && std::string(argv[1]) == "json") || result.error()) {
@@ -89,9 +96,12 @@ int main(int argc, char** argv) {
   std::cout << "gridpoints: " << nums_gridpoints.mean() << ", "
             << nums_gridpoints.minCoeff() << ", " << nums_gridpoints.maxCoeff()
             << std::endl;
-  std::cout << "durations (microseconds): " << durations.mean() << ", "
+  std::cout << "computation times (microseconds): " << durations.mean() << ", "
             << durations.minCoeff() << ", " << durations.maxCoeff()
             << std::endl;
+  std::cout << "trajectory durations (seconds): " << traj_durations.mean()
+            << ", " << traj_durations.minCoeff() << ", "
+            << traj_durations.maxCoeff() << std::endl;
   std::cout << "infinity norm mean: " << inf_means.mean() << ", "
             << inf_means.minCoeff() << ", " << inf_means.maxCoeff()
             << std::endl;

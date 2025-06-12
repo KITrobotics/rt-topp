@@ -37,8 +37,8 @@ add_compile_options(
 
 add_library(${PROJECT_NAME} src/demo_trajectories.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen
-                                             nlohmann_json::nlohmann_json)
+target_link_libraries(${PROJECT_NAME}
+                      PUBLIC Eigen3::Eigen nlohmann_json::nlohmann_json pthread)
 
 add_executable(param_random_waypoints_example_generic
                examples/param_random_waypoints_generic.cpp)

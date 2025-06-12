@@ -108,8 +108,8 @@ TEST(ParamRTTOPP2, RandomWaypointsZeroStartGoalVel) {
     }
   }
 
-  // maximum three cases with stalling velocity
-  EXPECT_LE(error_counter, 3);
+  // zero cases with stalling velocity
+  EXPECT_EQ(error_counter, 0);
 }
 
 TEST(ParamRTTOPP2, RandomWaypointsSmallStartGoalVel) {
